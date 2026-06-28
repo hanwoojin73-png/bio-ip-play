@@ -222,7 +222,10 @@ export default function ChallengePage() {
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType || "video/webm" });
       rawBlobRef.current = blob;
-      setPendingWatermark(true);
+      // Skip watermark post-processing — go directly to preview
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+      setCaptureState("preview");
     };
 
     recorder.start(100);
