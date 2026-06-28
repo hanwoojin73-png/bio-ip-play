@@ -2,25 +2,30 @@
  * Canvas-based video watermarking.
  *
  * Flow:
- *  1. Decode source blob into an <video> element.
+ *  1. Decode source blob into a hidden <video> element (muted for autoplay policy).
  *  2. Drive a <canvas> per-frame via requestAnimationFrame.
- *  3. Draw the original frame + watermark text on the canvas.
+ *  3. Draw the original frame + watermark overlay on the canvas.
  *  4. Re-encode via MediaRecorder on canvas.captureStream().
- *  5. Route original audio through AudioContext → MediaStreamDestination.
- *  6. Return the watermarked blob.
+ *  5. Return the watermarked blob.
  *
- * Falls back to video-only (no audio) if AudioContext routing fails.
- * Falls back to the source blob if MediaRecorder re-encoding is unavailable.
+ * Falls back to source blob if re-encoding is unavailable or times out.
+ *
+ * Key fixes vs. original:
+ *  - video.muted = true  (autoplay policy: unmuted programmatic play is blocked)
+ *  - isFinite(duration) check (MediaRecorder webm has duration = Infinity)
+ *  - Elapsed-time progress fallback when duration is unknown
+ *  - 30-second hard timeout
+ *  - console.error on every failure path
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface WatermarkOptions {
-  uniqueId?:   string;       // e.g. "BIP-A3X9K2MQ" — auto-generated if omitted
-  logoText?:   string;       // default "BIO-IP PLAY"
-  date?:       Date;         // default new Date()
+  uniqueId?:   string;
+  logoText?:   string;
+  date?:       Date;
   opacity?:    number;       // 0–1, default 0.85
-  fps?:        number;       // canvas capture frame rate, default 30
+  fps?:        number;       // canvas capture fps, default 30
   onProgress?: (ratio: number) => void;   // 0 → 1
 }
 
@@ -28,7 +33,7 @@ export interface WatermarkResult {
   blob:        Blob;
   uniqueId:    string;
   mimeType:    string;
-  durationMs:  number;   // wall-clock processing time
+  durationMs:  number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -43,7 +48,6 @@ export function generateWatermarkId(): string {
   return id;
 }
 
-/** Manual rounded-rect path (avoids ctx.roundRect availability concerns). */
 function fillRoundRect(
   ctx: CanvasRenderingContext2D,
   x: number, y: number, w: number, h: number, r: number,
@@ -62,7 +66,6 @@ function fillRoundRect(
   ctx.fill();
 }
 
-/** Draws the BIO-IP PLAY watermark in the bottom-right corner. */
 function drawWatermark(
   ctx:      CanvasRenderingContext2D,
   cw:       number,
@@ -72,16 +75,14 @@ function drawWatermark(
   logoText: string,
   opacity:  number,
 ): void {
-  // Scale everything proportionally to canvas width
-  const scale      = Math.min(cw / 1080, 1);
-  const pad        = Math.round(16 * scale + 4);
-  const logoSize   = Math.round(Math.max(13, 17 * scale));
-  const metaSize   = Math.round(Math.max(10, 13 * scale));
-  const lineGap    = Math.round(metaSize * 1.55);
-  const innerPadX  = Math.round(12 * scale);
-  const innerPadY  = Math.round(8  * scale);
+  const scale     = Math.min(cw / 1080, 1);
+  const pad       = Math.round(16 * scale + 4);
+  const logoSize  = Math.round(Math.max(13, 17 * scale));
+  const metaSize  = Math.round(Math.max(10, 13 * scale));
+  const lineGap   = Math.round(metaSize * 1.55);
+  const innerPadX = Math.round(12 * scale);
+  const innerPadY = Math.round(8  * scale);
 
-  // Measure text to size the background pill
   ctx.font = `700 ${logoSize}px -apple-system, system-ui, Arial, sans-serif`;
   const logoW   = ctx.measureText(logoText).width;
   ctx.font = `${metaSize}px monospace`;
@@ -96,30 +97,23 @@ function drawWatermark(
 
   ctx.save();
 
-  // Background pill
   ctx.globalAlpha = opacity * 0.72;
   ctx.fillStyle   = "rgba(0, 0, 0, 0.65)";
   fillRoundRect(ctx, bgX, bgY, bgW, bgH, 6);
 
-  // Texts
-  ctx.globalAlpha = opacity;
+  ctx.globalAlpha  = opacity;
   ctx.textBaseline = "top";
   ctx.textAlign    = "left";
-
   const tx = bgX + innerPadX;
 
-  // Logo line
   ctx.fillStyle = "#ffffff";
   ctx.font      = `700 ${logoSize}px -apple-system, system-ui, Arial, sans-serif`;
   ctx.fillText(logoText, tx, bgY + innerPadY);
 
-  // ID line
   ctx.fillStyle = "#cccccc";
   ctx.font      = `${metaSize}px monospace`;
   ctx.fillText(uniqueId, tx, bgY + innerPadY + logoSize + (lineGap - metaSize) / 2);
-
-  // Date line
-  ctx.fillText(dateStr, tx, bgY + innerPadY + logoSize + lineGap + (lineGap - metaSize) / 2);
+  ctx.fillText(dateStr,  tx, bgY + innerPadY + logoSize + lineGap + (lineGap - metaSize) / 2);
 
   ctx.restore();
 }
@@ -138,13 +132,8 @@ function pickMimeType(): string {
 
 // ─── Core API ─────────────────────────────────────────────────────────────────
 
-/**
- * Applies a watermark to the given video blob and returns a new blob.
- *
- * @param sourceBlob  - Raw recorded video blob.
- * @param options     - Watermark configuration.
- * @returns           WatermarkResult with the new blob and metadata.
- */
+const TIMEOUT_MS = 30_000;
+
 export async function applyWatermark(
   sourceBlob: Blob,
   options:    WatermarkOptions = {},
@@ -166,91 +155,110 @@ export async function applyWatermark(
   const mimeType = pickMimeType();
   const wallStart = Date.now();
 
-  // ── 1. Create hidden video element ───────────────────────────────────────────
+  // ── 1. Hidden video element ───────────────────────────────────────────────────
   const video = document.createElement("video");
   video.playsInline = true;
-  video.muted       = false;
-  video.src         = URL.createObjectURL(sourceBlob);
+  // FIX: must be muted — browsers block programmatic play() on unmuted elements
+  // without a user gesture. Muting lets autoplay succeed.
+  video.muted = true;
+  video.src   = URL.createObjectURL(sourceBlob);
 
-  await new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolve) => {
     video.onloadedmetadata = () => resolve();
-    video.onerror          = () => reject(new Error("Video load failed"));
-    // Safety timeout in case metadata never fires (e.g. iOS first load)
-    setTimeout(resolve, 3000);
+    video.onerror = (e) => {
+      console.error("[watermark] loadedmetadata error:", e);
+      resolve(); // continue anyway with defaults
+    };
+    setTimeout(resolve, 3000); // safety: iOS can be slow
   });
 
   const cw = video.videoWidth  || 1280;
   const ch = video.videoHeight || 720;
-  const videoDuration = video.duration || 0;
 
-  // ── 2. Canvas + context ───────────────────────────────────────────────────────
-  const canvas   = document.createElement("canvas");
-  canvas.width   = cw;
-  canvas.height  = ch;
-  const ctx      = canvas.getContext("2d")!;
+  // FIX: MediaRecorder webm files have duration = Infinity — guard against it.
+  const videoDuration = isFinite(video.duration) && video.duration > 0
+    ? video.duration
+    : 0;
 
-  // ── 3. Canvas stream ──────────────────────────────────────────────────────────
+  // ── 2. Canvas ─────────────────────────────────────────────────────────────────
+  const canvas  = document.createElement("canvas");
+  canvas.width  = cw;
+  canvas.height = ch;
+  const ctx     = canvas.getContext("2d")!;
+
+  // ── 3. Streams ────────────────────────────────────────────────────────────────
   const canvasStream = canvas.captureStream(fps);
 
-  // ── 4. Audio routing (best-effort) ────────────────────────────────────────────
-  let finalStream: MediaStream = canvasStream;
-  let audioCtx: AudioContext | null = null;
-
-  try {
-    audioCtx = new AudioContext();
-    const src  = audioCtx.createMediaElementSource(video);
-    const dest = audioCtx.createMediaStreamDestination();
-    src.connect(dest);
-    // Also connect to speakers so the video "plays" properly (required on some browsers)
-    src.connect(audioCtx.destination);
-
-    const audioTrack = dest.stream.getAudioTracks()[0];
-    if (audioTrack) {
-      finalStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        audioTrack,
-      ]);
-    }
-  } catch {
-    // Silently fall back to video-only stream
-  }
-
-  // ── 5. MediaRecorder ──────────────────────────────────────────────────────────
+  // ── 4. MediaRecorder ──────────────────────────────────────────────────────────
   const chunks: Blob[] = [];
   const recorder = new MediaRecorder(
-    finalStream,
+    canvasStream,
     mimeType ? { mimeType } : undefined,
   );
   recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
+  // ── 5. Main promise with timeout ──────────────────────────────────────────────
   return new Promise<WatermarkResult>((resolve, reject) => {
-    recorder.onstop = () => {
-      URL.revokeObjectURL(video.src);
-      audioCtx?.close().catch(() => {});
+    let settled = false;
 
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      URL.revokeObjectURL(video.src);
+    };
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      console.error("[watermark] failed:", err.message);
+      cleanup();
+      reject(err);
+    };
+
+    const succeed = (blob: Blob) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({ blob, uniqueId, mimeType: mimeType || "video/webm", durationMs: Date.now() - wallStart });
+    };
+
+    // Hard timeout — user gets an error instead of infinite spinner
+    const timeoutId = setTimeout(() => {
+      console.error("[watermark] Timeout after 30s");
+      try { recorder.stop(); } catch {}
+      fail(new Error("워터마크 처리 시간 초과 (30초). 짧은 영상으로 다시 시도해주세요."));
+    }, TIMEOUT_MS);
+
+    recorder.onstop = () => {
       const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-      resolve({
-        blob,
-        uniqueId,
-        mimeType: mimeType || "video/webm",
-        durationMs: Date.now() - wallStart,
-      });
+      succeed(blob);
     };
 
     recorder.onerror = (e) => {
-      URL.revokeObjectURL(video.src);
-      reject(new Error(`MediaRecorder error: ${e}`));
+      console.error("[watermark] MediaRecorder error:", e);
+      fail(new Error("MediaRecorder 오류가 발생했습니다."));
     };
 
-    // ── 6. Frame-by-frame drawing loop ─────────────────────────────────────────
+    // ── 6. Frame drawing loop ─────────────────────────────────────────────────────
     const drawFrame = () => {
-      if (video.paused || video.ended) return;
+      if (settled || video.paused || video.ended) return;
 
-      ctx.drawImage(video, 0, 0, cw, ch);
-      drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
+      try {
+        ctx.drawImage(video, 0, 0, cw, ch);
+        drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
+      } catch (e) {
+        console.error("[watermark] drawFrame error:", e);
+      }
 
+      // Progress reporting
       if (videoDuration > 0) {
-        onProgress?.(Math.min(video.currentTime / videoDuration, 1));
+        // Known duration: report exact ratio
+        onProgress?.(Math.min(video.currentTime / videoDuration, 0.99));
+      } else {
+        // Unknown duration (webm): estimate from wall-clock elapsed
+        // Assume encoding takes ~1.5× real-time playback speed, cap at 95%
+        const elapsedSec = (Date.now() - wallStart) / 1000;
+        const estimatedTotal = Math.max(video.currentTime * 1.5 + 2, 5);
+        onProgress?.(Math.min(elapsedSec / estimatedTotal, 0.95));
       }
 
       requestAnimationFrame(drawFrame);
@@ -258,15 +266,23 @@ export async function applyWatermark(
 
     video.onplay  = () => { drawFrame(); };
     video.onended = () => {
-      // Draw last frame with watermark, then stop
-      ctx.drawImage(video, 0, 0, cw, ch);
-      drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
+      try {
+        ctx.drawImage(video, 0, 0, cw, ch);
+        drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
+      } catch {}
       onProgress?.(1);
       recorder.stop();
     };
-    video.onerror = () => reject(new Error("Video playback error during watermarking"));
+    video.onerror = (e) => {
+      console.error("[watermark] video error during playback:", e);
+      fail(new Error("영상 재생 중 오류가 발생했습니다."));
+    };
 
     recorder.start(200);
-    video.play().catch(reject);
+
+    video.play().catch((err: Error) => {
+      console.error("[watermark] video.play() rejected:", err);
+      fail(new Error(`영상 재생 실패: ${err?.message ?? String(err)}`));
+    });
   });
 }

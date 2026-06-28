@@ -22,6 +22,7 @@ import { uploadVideo, saveBioIPAsset, getOrCreateUserId } from "@/lib/supabase/u
 type CaptureState  = "idle" | "ready" | "recording" | "watermarking" | "preview";
 type FacingMode    = "user" | "environment";
 type RegisterState = "idle" | "working" | "done";
+type Orientation   = "portrait" | "landscape";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,22 +44,26 @@ function Spinner({ className = "h-6 w-6" }: { className?: string }) {
 export default function ChallengePage() {
   const router = useRouter();
 
-  // State machine
+  // ── State machine ────────────────────────────────────────────────────────────
   const [captureState,      setCaptureState]      = useState<CaptureState>("idle");
   const [facingMode,        setFacingMode]        = useState<FacingMode>("user");
+  const [orientation,       setOrientation]       = useState<Orientation>("portrait");
+  const [zoom,              setZoom]              = useState(1);
   const [elapsed,           setElapsed]           = useState(0);
   const [error,             setError]             = useState<string | null>(null);
   const [watermarkProgress, setWatermarkProgress] = useState(0);
+  const [watermarkError,    setWatermarkError]    = useState<string | null>(null);
   const [watermarkResult,   setWatermarkResult]   = useState<WatermarkResult | null>(null);
   const [previewUrl,        setPreviewUrl]        = useState<string | null>(null);
   const [registerState,     setRegisterState]     = useState<RegisterState>("idle");
   const [pendingWatermark,  setPendingWatermark]  = useState(false);
 
-  // DOM refs
+  // ── DOM refs ─────────────────────────────────────────────────────────────────
   const liveVideoRef    = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
 
-  // Recording internals
+  // ── Recording internals ───────────────────────────────────────────────────────
   const streamRef           = useRef<MediaStream | null>(null);
   const mediaRecorderRef    = useRef<MediaRecorder | null>(null);
   const chunksRef           = useRef<Blob[]>([]);
@@ -66,13 +71,16 @@ export default function ChallengePage() {
   const frameIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const rawBlobRef          = useRef<Blob | null>(null);
 
-  // Bio extraction
+  // ── Bio extraction ────────────────────────────────────────────────────────────
   const capturedFramesRef   = useRef<CaptureFrame[]>([]);
   const isCapturingFrameRef = useRef(false);
   const recordingStartRef   = useRef(0);
   const visualResultRef     = useRef<ExtractionResult | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const dynamicsResultRef   = useRef<GeneratorResult | null>(null);
+
+  // ── Pinch zoom ────────────────────────────────────────────────────────────────
+  const pinchStartRef = useRef(0);
 
   // ── Start camera ─────────────────────────────────────────────────────────────
   const startCamera = useCallback(async (facing: FacingMode) => {
@@ -98,7 +106,52 @@ export default function ChallengePage() {
     startCamera(next);
   }, [facingMode, startCamera]);
 
-  // ── Per-frame landmark capture (5 fps during recording) ───────────────────────
+  // ── Orientation toggle ────────────────────────────────────────────────────────
+  const toggleOrientation = useCallback(() => {
+    setOrientation((o) => (o === "portrait" ? "landscape" : "portrait"));
+  }, []);
+
+  // ── Pinch gesture handlers ────────────────────────────────────────────────────
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchStartRef.current = Math.hypot(dx, dy);
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 2 || pinchStartRef.current === 0) return;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.hypot(dx, dy);
+    const scale = dist / pinchStartRef.current;
+    setZoom((prev) => Math.max(1, Math.min(3, prev * scale)));
+    pinchStartRef.current = dist;
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    pinchStartRef.current = 0;
+  }, []);
+
+  // ── File upload ───────────────────────────────────────────────────────────────
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("video/")) {
+      setError("영상 파일(.mp4, .webm 등)만 업로드할 수 있습니다.");
+      return;
+    }
+    rawBlobRef.current = file;
+    setWatermarkError(null);
+    setWatermarkProgress(0);
+    setCaptureState("watermarking");
+    setPendingWatermark(true);
+    // Reset the input so the same file can be re-selected if needed
+    e.target.value = "";
+  }, []);
+
+  // ── Per-frame landmark capture ─────────────────────────────────────────────────
   const captureFrame = useCallback(async () => {
     if (isCapturingFrameRef.current || !liveVideoRef.current) return;
     isCapturingFrameRef.current = true;
@@ -154,8 +207,9 @@ export default function ChallengePage() {
 
   // ── Stop recording ─────────────────────────────────────────────────────────────
   const stopRecording = useCallback(() => {
-    if (timerRef.current)        clearInterval(timerRef.current);
+    if (timerRef.current)         clearInterval(timerRef.current);
     if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+    setWatermarkError(null);
     setCaptureState("watermarking");
     setWatermarkProgress(0);
     mediaRecorderRef.current?.stop();
@@ -171,7 +225,7 @@ export default function ChallengePage() {
 
     let cancelled = false;
 
-    // Bio extraction in background (non-blocking, best-effort)
+    // Bio extraction — non-blocking, best-effort
     if (liveVideoRef.current) {
       extractVisualSignature(liveVideoRef.current)
         .then((r) => { if (!cancelled) visualResultRef.current = r; })
@@ -195,8 +249,10 @@ export default function ChallengePage() {
         setPreviewUrl(url);
         setCaptureState("preview");
       })
-      .catch(() => {
+      .catch((err: Error) => {
         if (cancelled) return;
+        console.error("[challenge] watermark failed:", err.message);
+        setWatermarkError(err.message);
         // Fallback: show raw video without watermark
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
@@ -212,11 +268,13 @@ export default function ChallengePage() {
     setPreviewUrl(null);
     setWatermarkResult(null);
     setWatermarkProgress(0);
+    setWatermarkError(null);
     setRegisterState("idle");
     rawBlobRef.current        = null;
     capturedFramesRef.current = [];
     setElapsed(0);
     setError(null);
+    setZoom(1);
     startCamera(facingMode);
   }, [previewUrl, facingMode, startCamera]);
 
@@ -230,7 +288,7 @@ export default function ChallengePage() {
     a.click();
   }, [previewUrl, watermarkResult]);
 
-  // ── SNS share (Web Share API) ──────────────────────────────────────────────────
+  // ── SNS share ──────────────────────────────────────────────────────────────────
   const shareVideo = useCallback(async () => {
     const blob = watermarkResult?.blob ?? rawBlobRef.current;
     if (!blob) return;
@@ -248,37 +306,24 @@ export default function ChallengePage() {
   // ── Bio-IP registration ────────────────────────────────────────────────────────
   const registerBioIP = useCallback(async () => {
     setRegisterState("working");
-
     try {
-      // 1. Ensure visual extraction has run (uses frozen last frame)
       if (!visualResultRef.current && liveVideoRef.current) {
         try { visualResultRef.current = await extractVisualSignature(liveVideoRef.current); }
         catch {}
       }
-
-      // 2. Resolve user ID (auth session or guest localStorage UUID)
       const userId = await getOrCreateUserId();
-
-      // 3. Upload watermarked video to Supabase Storage
-      const blob = watermarkResult?.blob ?? rawBlobRef.current;
+      const blob   = watermarkResult?.blob ?? rawBlobRef.current;
       if (!blob) throw new Error("녹화된 영상이 없습니다.");
       const videoUrl = await uploadVideo(blob, userId);
-
-      // 4. Extract face/pose landmarks from captured frames (last frame with data)
-      const frames = capturedFramesRef.current;
+      const frames   = capturedFramesRef.current;
       const lastFrame = frames.length > 0 ? frames[frames.length - 1] : null;
-      const faceLandmarks = lastFrame?.face ?? [];
-      const poseLandmarks = lastFrame?.pose ?? [];
-
-      // 5. Save to bio_ip_assets table
       await saveBioIPAsset({
         userId,
         videoUrl,
-        faceLandmarks,
-        poseLandmarks,
-        watermarkId: watermarkResult?.uniqueId ?? generateWatermarkId(),
+        faceLandmarks:  lastFrame?.face ?? [],
+        poseLandmarks:  lastFrame?.pose ?? [],
+        watermarkId:    watermarkResult?.uniqueId ?? generateWatermarkId(),
       });
-
       setRegisterState("done");
       await new Promise((r) => setTimeout(r, 700));
       router.push("/my-bio-ip");
@@ -291,7 +336,7 @@ export default function ChallengePage() {
   // ── Cleanup on unmount ─────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (timerRef.current)        clearInterval(timerRef.current);
+      if (timerRef.current)         clearInterval(timerRef.current);
       if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       disposeMediaPipe();
@@ -303,30 +348,51 @@ export default function ChallengePage() {
     if (previewVideoRef.current && previewUrl) previewVideoRef.current.src = previewUrl;
   }, [previewUrl]);
 
-  const isLive        = captureState === "ready" || captureState === "recording";
-  const isRecording   = captureState === "recording";
+  const isLive         = captureState === "ready" || captureState === "recording";
+  const isRecording    = captureState === "recording";
   const isWatermarking = captureState === "watermarking";
-  const isPreview     = captureState === "preview";
+  const isPreview      = captureState === "preview";
+
+  // ── Live video CSS: zoom + mirror + orientation ───────────────────────────────
+  const videoTransform = [
+    facingMode === "user" ? "scaleX(-1)" : "",
+    zoom !== 1 ? `scale(${zoom})` : "",
+  ].filter(Boolean).join(" ") || "none";
+
+  const videoClass = orientation === "landscape"
+    ? "absolute inset-0 w-full h-full object-contain"
+    : "absolute inset-0 h-full w-full object-cover";
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Render — fixed overlay covering the full screen (including NavBar)
+  // Render
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-40 overflow-hidden bg-black">
+    <div
+      className="fixed inset-0 z-40 overflow-hidden bg-black"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* ── Hidden file input ─────────────────────────────────────────────── */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
 
-      {/* ── Live camera feed — always mounted so last frame stays for MediaPipe ── */}
+      {/* ── Live camera feed — always mounted ────────────────────────────── */}
       <video
         ref={liveVideoRef}
         autoPlay
         muted
         playsInline
-        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${
-          isLive ? "opacity-100" : "opacity-0"
-        }`}
-        style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
+        className={`${videoClass} transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
+        style={{ transform: videoTransform, transformOrigin: "center center" }}
       />
 
-      {/* ── Watermarked preview video ──────────────────────────────────────── */}
+      {/* ── Watermarked preview ───────────────────────────────────────────── */}
       {isPreview && previewUrl && (
         <video
           ref={previewVideoRef}
@@ -338,7 +404,7 @@ export default function ChallengePage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
-          IDLE — camera start prompt
+          IDLE — camera start prompt + file upload
       ════════════════════════════════════════════════════════════════════ */}
       {captureState === "idle" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 px-8 text-center">
@@ -355,6 +421,7 @@ export default function ChallengePage() {
             </p>
           )}
 
+          {/* Camera start */}
           <button
             onClick={() => startCamera(facingMode)}
             className="flex h-24 w-24 items-center justify-center rounded-full bg-violet-600 shadow-xl shadow-violet-900/60 active:scale-95"
@@ -366,6 +433,24 @@ export default function ChallengePage() {
           </button>
 
           <p className="text-xs text-zinc-600">탭하여 카메라 시작</p>
+
+          {/* File upload separator */}
+          <div className="flex w-full max-w-xs items-center gap-3">
+            <div className="h-px flex-1 bg-zinc-800" />
+            <span className="text-xs text-zinc-600">또는</span>
+            <div className="h-px flex-1 bg-zinc-800" />
+          </div>
+
+          {/* File upload */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900 px-6 py-3 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white active:scale-95"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+            영상 파일 업로드
+          </button>
         </div>
       )}
 
@@ -378,8 +463,8 @@ export default function ChallengePage() {
           <div className="w-full max-w-xs space-y-3">
             <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
               <div
-                className="h-full rounded-full bg-violet-500 transition-all duration-300"
-                style={{ width: `${watermarkProgress}%` }}
+                className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                style={{ width: `${Math.max(watermarkProgress, 3)}%` }}
               />
             </div>
             <p className="text-center text-sm text-zinc-400">
@@ -390,7 +475,7 @@ export default function ChallengePage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
-          RECORDING — red dot + timer (top center)
+          RECORDING — red dot + timer
       ════════════════════════════════════════════════════════════════════ */}
       {isRecording && (
         <div
@@ -407,8 +492,18 @@ export default function ChallengePage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
-          TOP BAR — back/retry (left) + flip camera / watermark ID (right)
-          Shown when live (not recording) or in preview.
+          ZOOM indicator — shown during recording when zoom > 1
+      ════════════════════════════════════════════════════════════════════ */}
+      {isRecording && zoom !== 1 && (
+        <div className="absolute left-4 top-1/2 z-20 -translate-y-1/2">
+          <div className="rounded-full bg-black/60 px-3 py-1.5 font-mono text-sm font-bold text-white backdrop-blur-sm">
+            {zoom.toFixed(1)}×
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          TOP BAR — back / flip / orientation / watermark ID
       ════════════════════════════════════════════════════════════════════ */}
       {(isLive || isPreview) && !isRecording && (
         <div
@@ -432,20 +527,45 @@ export default function ChallengePage() {
             )}
           </button>
 
-          {/* Flip camera button (only when ready) */}
+          {/* Right-side controls when ready */}
           {captureState === "ready" && (
-            <button
-              onClick={flipCamera}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-              aria-label="카메라 전환"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Orientation toggle */}
+              <button
+                onClick={toggleOrientation}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+                aria-label={orientation === "portrait" ? "가로 모드" : "세로 모드"}
+                title={orientation === "portrait" ? "가로 모드" : "세로 모드"}
+              >
+                {orientation === "portrait" ? (
+                  /* Portrait → landscape icon */
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <rect x="2" y="5" width="20" height="14" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l3 3-3 3" />
+                  </svg>
+                ) : (
+                  /* Landscape → portrait icon */
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <rect x="7" y="2" width="10" height="20" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 10l2 2-2 2" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Flip camera */}
+              <button
+                onClick={flipCamera}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+                aria-label="카메라 전환"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+              </button>
+            </div>
           )}
 
-          {/* Watermark ID badge (preview only) */}
+          {/* Watermark ID badge (preview) */}
           {isPreview && watermarkResult && (
             <div className="max-w-[12rem] truncate rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md">
               <span className="font-mono text-[10px] tracking-wide text-zinc-300">
@@ -457,7 +577,28 @@ export default function ChallengePage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
-          BOTTOM — record / stop + flip camera
+          ZOOM CONTROLS — right side when ready (tap to set level)
+      ════════════════════════════════════════════════════════════════════ */}
+      {captureState === "ready" && (
+        <div className="absolute right-4 top-1/2 z-20 -translate-y-1/2 flex flex-col gap-2">
+          {([1, 1.5, 2, 3] as const).map((z) => (
+            <button
+              key={z}
+              onClick={() => setZoom(z)}
+              className={`flex h-10 w-10 items-center justify-center rounded-full font-mono text-xs font-bold transition active:scale-90 ${
+                Math.abs(zoom - z) < 0.15
+                  ? "bg-white text-black shadow-lg"
+                  : "bg-black/50 text-white backdrop-blur-md"
+              }`}
+            >
+              {z}×
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          BOTTOM — record + controls
       ════════════════════════════════════════════════════════════════════ */}
       {isLive && (
         <div
@@ -466,8 +607,21 @@ export default function ChallengePage() {
         >
           <div className="bg-gradient-to-t from-black/80 to-transparent pt-16">
             <div className="flex items-center justify-center gap-10">
-              {/* Left spacer keeps record btn centered */}
-              <div className="w-14" />
+              {/* Left: file upload (ready) or spacer (recording) */}
+              {captureState === "ready" ? (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm active:scale-90"
+                  aria-label="영상 파일 업로드"
+                  title="영상 파일 업로드"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                </button>
+              ) : (
+                <div className="w-14" />
+              )}
 
               {/* Record (ready) or Stop (recording) */}
               {captureState === "ready" ? (
@@ -488,7 +642,7 @@ export default function ChallengePage() {
                 </button>
               )}
 
-              {/* Flip camera (only when ready) */}
+              {/* Right: flip camera (ready) or spacer (recording) */}
               {captureState === "ready" ? (
                 <button
                   onClick={flipCamera}
@@ -517,9 +671,15 @@ export default function ChallengePage() {
         >
           <div className="bg-gradient-to-t from-black/95 via-black/65 to-transparent px-5 pt-20">
 
+            {/* Watermark error notice */}
+            {watermarkError && (
+              <div className="mb-3 rounded-xl border border-amber-800/60 bg-amber-950/40 px-4 py-2.5 text-xs text-amber-300">
+                워터마크 없이 저장됩니다: {watermarkError}
+              </div>
+            )}
+
             {registerState === "idle" && (
               <div className="flex flex-col gap-3">
-                {/* Primary: Bio-IP 등록 */}
                 <button
                   onClick={registerBioIP}
                   className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 text-base font-bold text-white shadow-lg shadow-violet-900/50 active:scale-[0.97]"
@@ -530,7 +690,6 @@ export default function ChallengePage() {
                   Bio-IP 등록
                 </button>
 
-                {/* Secondary: Download + Share */}
                 <div className="flex gap-3">
                   <button
                     onClick={downloadVideo}
@@ -541,7 +700,6 @@ export default function ChallengePage() {
                     </svg>
                     다운로드
                   </button>
-
                   <button
                     onClick={shareVideo}
                     className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-semibold text-white backdrop-blur-md active:scale-[0.97]"
