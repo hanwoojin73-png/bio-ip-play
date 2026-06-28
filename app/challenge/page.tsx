@@ -58,6 +58,7 @@ export default function ChallengePage() {
   const [watermarkResult,   setWatermarkResult]   = useState<WatermarkResult | null>(null);
   const [previewUrl,        setPreviewUrl]        = useState<string | null>(null);
   const [registerState,     setRegisterState]     = useState<RegisterState>("idle");
+  const [registerStep,      setRegisterStep]      = useState<string>("");
   const [pendingWatermark,  setPendingWatermark]  = useState(false);
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -338,34 +339,44 @@ export default function ChallengePage() {
   // ── Bio-IP registration ────────────────────────────────────────────────────────
   const registerBioIP = useCallback(async () => {
     setRegisterState("working");
+    setRegisterStep("준비 중…");
     setError(null);
-    try {
-      console.log("[register] 시작");
 
-      const userId = await getOrCreateUserId();
+    const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`${label} 시간 초과 (${ms / 1000}초)`)), ms),
+        ),
+      ]);
+
+    try {
+      const userId = await withTimeout(getOrCreateUserId(), 10_000, "사용자 확인");
       console.log("[register] userId:", userId);
 
       const blob = rawBlobRef.current;
       if (!blob) throw new Error("녹화된 영상이 없습니다.");
-      console.log("[register] blob:", blob.size, "bytes", blob.type);
 
-      console.log("[register] 영상 업로드 중…");
-      const videoUrl = await uploadVideo(blob, userId);
+      setRegisterStep(`영상 업로드 중… (${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
+      const videoUrl = await withTimeout(uploadVideo(blob, userId), 60_000, "영상 업로드");
       console.log("[register] 업로드 완료:", videoUrl);
 
+      setRegisterStep("DB 저장 중…");
       const frames    = capturedFramesRef.current;
       const lastFrame = frames.length > 0 ? frames[frames.length - 1] : null;
       const wId       = watermarkResult?.uniqueId ?? generateWatermarkId();
-
-      console.log("[register] DB 저장 중… watermarkId:", wId);
-      await saveBioIPAsset({
-        userId,
-        videoUrl,
-        faceLandmarks: lastFrame?.face ?? [],
-        poseLandmarks: lastFrame?.pose ?? [],
-        watermarkId:   wId,
-      });
-      console.log("[register] DB 저장 완료");
+      await withTimeout(
+        saveBioIPAsset({
+          userId,
+          videoUrl,
+          faceLandmarks: lastFrame?.face ?? [],
+          poseLandmarks: lastFrame?.pose ?? [],
+          watermarkId:   wId,
+        }),
+        15_000,
+        "DB 저장",
+      );
+      console.log("[register] 완료");
 
       setRegisterState("done");
       await new Promise((r) => setTimeout(r, 700));
@@ -374,6 +385,7 @@ export default function ChallengePage() {
       const msg = err instanceof Error ? err.message : "등록 중 오류가 발생했습니다.";
       console.error("[register] 실패:", msg);
       setError(msg);
+      setRegisterStep("");
       setRegisterState("idle");
     }
   }, [router, watermarkResult]);
@@ -761,7 +773,7 @@ export default function ChallengePage() {
             {registerState === "working" && (
               <div className="flex flex-col items-center gap-4 py-6">
                 <Spinner className="h-10 w-10 text-violet-400" />
-                <p className="text-sm font-medium text-zinc-300">Bio-IP 등록 중…</p>
+                <p className="text-sm font-medium text-zinc-300">{registerStep || "Bio-IP 등록 중…"}</p>
               </div>
             )}
 
