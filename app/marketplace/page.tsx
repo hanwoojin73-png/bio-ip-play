@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { parseEther } from "viem";
 import type { LicenseScope } from "@/types/bio-ip";
-import PurchaseModal from "@/components/marketplace/PurchaseModal";
+import { usePurchase, type PurchaseStatus } from "@/hooks/usePurchase";
+import { shortAddress, amoyTxUrl } from "@/lib/blockchain/wallet";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -362,6 +365,260 @@ function AssetCard({ asset, onClick }: { asset: MarketplaceAsset; onClick: () =>
   );
 }
 
+// ─── LicenseScope → uint8 ──────────────────────────────────────────────────────
+
+const SCOPE_ENUM: Record<LicenseScope, 0 | 1 | 2> = {
+  exclusive:     0,
+  non_exclusive: 1,
+  personal_only: 2,
+};
+
+/** Rough MATIC price from royaltyRateBps for demo (1000 bps → 0.001 MATIC) */
+function bpsToPrice(bps: number): bigint {
+  return parseEther((bps / 1_000_000).toFixed(8));
+}
+
+// ─── Wallet bar ────────────────────────────────────────────────────────────────
+
+function WalletBar() {
+  const { address, isConnected } = useAccount();
+  const { connect, connectors }  = useConnect();
+  const { disconnect }           = useDisconnect();
+
+  if (isConnected && address) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          <span className="font-mono text-xs text-zinc-300">{shortAddress(address)}</span>
+        </div>
+        <button
+          onClick={() => disconnect()}
+          className="rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-500 transition hover:border-zinc-500 hover:text-zinc-300"
+        >
+          연결 해제
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => connect({ connector: connectors[0] })}
+      className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500"
+    >
+      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M2.273 5.625A4.483 4.483 0 015.25 4.5h13.5c1.141 0 2.183.425 2.977 1.125A3 3 0 0018.75 3H5.25a3 3 0 00-2.977 2.625zM2.273 8.625A4.483 4.483 0 015.25 7.5h13.5c1.141 0 2.183.425 2.977 1.125A3 3 0 0018.75 6H5.25a3 3 0 00-2.977 2.625zM5.25 9a3 3 0 00-3 3v6a3 3 0 003 3h13.5a3 3 0 003-3v-6a3 3 0 00-3-3H5.25zm7.5 4.5a.75.75 0 000 1.5h3a.75.75 0 000-1.5h-3z" />
+      </svg>
+      지갑 연결
+    </button>
+  );
+}
+
+// ─── Purchase flow modal ────────────────────────────────────────────────────────
+
+const STATUS_LABEL: Record<PurchaseStatus, string> = {
+  "idle":              "",
+  "switching-network": "Polygon Amoy로 전환 중…",
+  "signing":           "MetaMask에서 승인해주세요…",
+  "pending":           "트랜잭션 처리 중…",
+  "saving":            "라이선스 정보 저장 중…",
+  "success":           "구매 완료!",
+  "error":             "",
+};
+
+function PurchaseFlowModal({
+  asset,
+  onClose,
+}: {
+  asset: MarketplaceAsset;
+  onClose: () => void;
+}) {
+  const { address, isConnected }              = useAccount();
+  const { connect, connectors, isPending: connectPending } = useConnect();
+  const { purchaseLicense, reset, status, error, txHash } = usePurchase();
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  const price    = bpsToPrice(asset.royaltyRateBps);
+  const priceStr = `${(asset.royaltyRateBps / 1_000_000).toFixed(6)} MATIC`;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  const isProcessing =
+    status === "switching-network" ||
+    status === "signing" ||
+    status === "pending" ||
+    status === "saving";
+
+  return (
+    <div
+      ref={backdropRef}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:px-4"
+      onClick={(e) => { if (e.target === backdropRef.current && !isProcessing) handleClose(); }}
+    >
+      <div className="w-full max-w-md rounded-t-2xl border border-zinc-700 bg-zinc-900 shadow-2xl sm:rounded-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+          <h2 className="text-sm font-bold text-white">라이선스 구매</h2>
+          {!isProcessing && (
+            <button onClick={handleClose} className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-white">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-4 p-5">
+          {/* Asset summary */}
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+            <p className="text-xs text-zinc-500">{asset.ownerName}</p>
+            <p className="mt-0.5 text-sm font-semibold text-white">{asset.title}</p>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-xs text-zinc-500">라이선스 가격</span>
+              <span className="font-mono text-sm font-bold text-emerald-400">{priceStr}</span>
+            </div>
+          </div>
+
+          {/* ── Not connected ── */}
+          {!isConnected && status !== "success" && (
+            <div className="space-y-3">
+              <p className="text-center text-sm text-zinc-400">
+                구매하려면 Web3 지갑을 연결하세요
+              </p>
+              <button
+                onClick={() => connect({ connector: connectors[0] })}
+                disabled={connectPending}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 text-sm font-semibold text-white transition hover:bg-orange-400 disabled:opacity-60"
+              >
+                {connectPending ? (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.273 5.625A4.483 4.483 0 015.25 4.5h13.5c1.141 0 2.183.425 2.977 1.125A3 3 0 0018.75 3H5.25a3 3 0 00-2.977 2.625zM2.273 8.625A4.483 4.483 0 015.25 7.5h13.5c1.141 0 2.183.425 2.977 1.125A3 3 0 0018.75 6H5.25a3 3 0 00-2.977 2.625zM5.25 9a3 3 0 00-3 3v6a3 3 0 003 3h13.5a3 3 0 003-3v-6a3 3 0 00-3-3H5.25zm7.5 4.5a.75.75 0 000 1.5h3a.75.75 0 000-1.5h-3z" />
+                  </svg>
+                )}
+                MetaMask로 연결
+              </button>
+              {connectors[1] && (
+                <button
+                  onClick={() => connect({ connector: connectors[1] })}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 text-sm text-zinc-300 transition hover:border-zinc-500"
+                >
+                  Coinbase Wallet
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* ── Connected, idle or error ── */}
+          {isConnected && (status === "idle" || status === "error") && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs">
+                <span className="text-zinc-500">구매 지갑</span>
+                <span className="font-mono text-zinc-300">{address ? shortAddress(address) : ""}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs">
+                <span className="text-zinc-500">네트워크</span>
+                <span className="text-violet-300">Polygon Amoy</span>
+              </div>
+
+              {error && (
+                <p className="rounded-lg border border-red-800/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+                  {error}
+                </p>
+              )}
+
+              <button
+                onClick={() =>
+                  purchaseLicense({
+                    bioIpId:  asset.id,
+                    tokenId:  BigInt(asset.id.replace(/\D/g, "") || "0"),
+                    price,
+                    scope:    SCOPE_ENUM[asset.scope],
+                  })
+                }
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-violet-600 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-[0.97]"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                </svg>
+                구매 확인 · {priceStr}
+              </button>
+            </div>
+          )}
+
+          {/* ── Processing (network switch / signing / pending / saving) ── */}
+          {isProcessing && (
+            <div className="flex flex-col items-center gap-4 py-4">
+              <svg className="h-10 w-10 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              <p className="text-sm font-medium text-zinc-200">{STATUS_LABEL[status]}</p>
+              {txHash && (
+                <a
+                  href={amoyTxUrl(txHash)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs text-violet-400 underline underline-offset-2"
+                >
+                  {txHash.slice(0, 16)}…{txHash.slice(-6)} ↗
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* ── Success ── */}
+          {status === "success" && (
+            <div className="flex flex-col items-center gap-4 py-4 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600">
+                <svg className="h-7 w-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-base font-bold text-white">라이선스 구매 완료!</p>
+                <p className="mt-1 text-sm text-zinc-400">Supabase 라이선스 DB에 저장됐습니다.</p>
+              </div>
+              {txHash && (
+                <a
+                  href={amoyTxUrl(txHash)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 rounded-lg border border-violet-700/60 px-3 py-1.5 text-xs text-violet-400 transition hover:border-violet-500"
+                >
+                  Amoy 익스플로러에서 확인 ↗
+                </a>
+              )}
+              <button
+                onClick={handleClose}
+                className="h-11 w-full rounded-xl bg-zinc-800 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-700"
+              >
+                닫기
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Search icon ───────────────────────────────────────────────────────────────
 
 function IconSearch() {
@@ -412,11 +669,16 @@ export default function MarketplacePage() {
     <main className="min-h-screen bg-zinc-950 text-white">
       {/* ── Header ── */}
       <header className="border-b border-zinc-800 px-6 py-6">
-        <div className="mx-auto max-w-5xl">
-          <h1 className="text-2xl font-bold tracking-tight">Marketplace</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            검증된 크리에이터의 Bio-IP 자산을 발견하고 라이선스를 구매하세요
-          </p>
+        <div className="mx-auto max-w-5xl flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Marketplace</h1>
+            <p className="mt-1 text-sm text-zinc-400">
+              검증된 크리에이터의 Bio-IP 자산을 발견하고 라이선스를 구매하세요
+            </p>
+          </div>
+          <div className="mt-1 shrink-0">
+            <WalletBar />
+          </div>
         </div>
       </header>
 
@@ -508,9 +770,9 @@ export default function MarketplacePage() {
         />
       )}
 
-      {/* ── Purchase Modal ── */}
+      {/* ── Purchase Flow Modal (wagmi + Supabase) ── */}
       {purchasing && (
-        <PurchaseModal
+        <PurchaseFlowModal
           asset={purchasing}
           onClose={() => setPurchasing(null)}
         />

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import NavBar from "@/components/NavBar";
+import Web3Provider from "@/components/Web3Provider";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -29,8 +30,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <NavBar />
-        {children}
+        <Web3Provider>
+          <NavBar />
+          {children}
+        </Web3Provider>
       </body>
     </html>
   );

@@ -76,6 +76,19 @@ export type ChallengeUpdate = Partial<Pick<ChallengeRow, "status" | "resolved_at
 export type RoyaltyPaymentInsert = Omit<RoyaltyPaymentRow, "paid_at">;
 export type RoyaltyPaymentUpdate = Partial<Pick<RoyaltyPaymentRow, "status" | "paid_at" | "tx_hash">>;
 
+// ─── Licenses (on-chain purchase records) ─────────────────────────────────────
+
+export interface LicenseRow {
+  id:            string;
+  bio_ip_id:     string;   // marketplace asset ID or on-chain token ID
+  buyer_address: string;   // wallet address (checksummed)
+  tx_hash:       string;   // Polygon Amoy transaction hash
+  purchased_at:  string;   // ISO timestamp
+}
+
+export type LicenseInsert = Omit<LicenseRow, "id">;
+export type LicenseUpdate = Partial<Pick<LicenseRow, "tx_hash">>;
+
 // ─── Supabase Database generic (passed to createClient<Database>) ─────────────
 
 export interface Database {
@@ -100,6 +113,11 @@ export interface Database {
         Row:    RoyaltyPaymentRow;
         Insert: RoyaltyPaymentInsert;
         Update: RoyaltyPaymentUpdate;
+      };
+      licenses: {
+        Row:    LicenseRow;
+        Insert: LicenseInsert;
+        Update: LicenseUpdate;
       };
     };
     Views: Record<string, never>;
