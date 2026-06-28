@@ -14,39 +14,22 @@ import {
   type CaptureFrame,
   type GeneratorResult,
 } from "@/lib/signature/generator";
+import { applyWatermark, generateWatermarkId, type WatermarkResult } from "@/lib/watermark";
+import { uploadVideo, saveBioIPAsset, getOrCreateUserId } from "@/lib/supabase/upload";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CaptureState    = "idle" | "ready" | "recording" | "preview";
-type RegisterState   = "idle" | "signing" | "registering" | "done";
-type AnalysisState   = "idle" | "extracting" | "done" | "error";
+type CaptureState  = "idle" | "ready" | "recording" | "watermarking" | "preview";
+type FacingMode    = "user" | "environment";
+type RegisterState = "idle" | "working" | "done";
 
-const REGISTER_STEPS: { key: RegisterState; label: string; doneLabel: string }[] = [
-  { key: "signing",     label: "서명 생성 중...",    doneLabel: "서명 생성됨" },
-  { key: "registering", label: "블록체인 등록 중...", doneLabel: "블록체인 등록됨" },
-  { key: "done",        label: "등록 완료!",          doneLabel: "등록 완료!" },
-];
-
-const INTERACTION_STYLE_META: Record<string, { label: string; className: string }> = {
-  expansive:  { label: "확장형",   className: "bg-violet-900/60 text-violet-300" },
-  moderate:   { label: "보통",     className: "bg-blue-900/60 text-blue-300" },
-  contained:  { label: "절제형",   className: "bg-zinc-700 text-zinc-300" },
-  asymmetric: { label: "비대칭형", className: "bg-amber-900/60 text-amber-300" },
-};
-
-// ─── Small helpers ────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(s: number) {
   return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
-function formatMs(ms: number) {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}초` : `${Math.round(ms)}ms`;
-}
-
-// ─── Icons ────────────────────────────────────────────────────────────────────
-
-function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+function Spinner({ className = "h-6 w-6" }: { className?: string }) {
   return (
     <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -55,317 +38,67 @@ function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-function CheckIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-    </svg>
-  );
-}
-
-function WarnIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
-    </svg>
-  );
-}
-
-// ─── Status badge ─────────────────────────────────────────────────────────────
-
-function StatusBadge({ state }: { state: CaptureState }) {
-  const map: Record<CaptureState, { label: string; cls: string }> = {
-    idle:      { label: "대기",    cls: "bg-zinc-700 text-zinc-300" },
-    ready:     { label: "준비됨",  cls: "bg-blue-900 text-blue-300" },
-    recording: { label: "녹화 중", cls: "bg-red-900 text-red-300" },
-    preview:   { label: "완료",    cls: "bg-emerald-900 text-emerald-300" },
-  };
-  const { label, cls } = map[state];
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
-      {state === "recording" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />}
-      {label}
-    </span>
-  );
-}
-
-// ─── Visual extraction panel ──────────────────────────────────────────────────
-
-function VisualPanel({
-  state, result, error,
-}: {
-  state: AnalysisState;
-  result: ExtractionResult | null;
-  error: string | null;
-}) {
-  if (state === "idle") return null;
-
-  const borderCls =
-    state === "extracting" ? "border-violet-800/60 bg-violet-950/30" :
-    state === "done"       ? "border-emerald-800/60 bg-emerald-950/20" :
-                             "border-red-800/60 bg-red-950/20";
-
-  return (
-    <div className={`rounded-2xl border px-5 py-4 space-y-3 ${borderCls}`}>
-      <div className="flex items-center gap-2.5">
-        {state === "extracting" && <Spinner className="h-4 w-4 text-violet-400" />}
-        {state === "done"       && <CheckIcon className="h-4 w-4 text-emerald-400" />}
-        {state === "error"      && <WarnIcon  className="h-4 w-4 text-red-400" />}
-        <p className={`text-sm font-semibold ${
-          state === "extracting" ? "text-violet-300" :
-          state === "done"       ? "text-emerald-300" : "text-red-300"
-        }`}>
-          {state === "extracting" && "시각·음성 레이어 분석 중…"}
-          {state === "done"       && "시각 레이어 분석 완료"}
-          {state === "error"      && "시각 분석 실패"}
-        </p>
-        {state === "extracting" && (
-          <span className="ml-auto text-xs text-zinc-600">FaceMesh + Pose</span>
-        )}
-      </div>
-
-      {state === "extracting" && (
-        <p className="text-xs text-zinc-500">CDN 모델 로드 및 얼굴·신체 랜드마크 추출 중입니다.</p>
-      )}
-      {state === "error" && error && (
-        <p className="text-xs text-red-400">{error}</p>
-      )}
-
-      {state === "done" && result && (
-        <div className="space-y-3">
-          <div className="flex gap-3">
-            {[
-              { v: result.faceLandmarkCount, l: "얼굴 랜드마크" },
-              { v: result.poseLandmarkCount, l: "신체 관절" },
-              { v: result.signature.faceGeometry.length, l: "좌표 벡터" },
-            ].map(({ v, l }) => (
-              <div key={l} className="rounded-lg bg-zinc-900/60 px-3 py-2 text-center">
-                <p className="text-lg font-bold text-white">{v}</p>
-                <p className="text-[10px] text-zinc-500">{l}</p>
-              </div>
-            ))}
-          </div>
-          {result.signature.expressionRange.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">감지된 표정</p>
-              <div className="flex flex-wrap gap-1.5">
-                {result.signature.expressionRange.map((l) => (
-                  <span key={l} className="rounded-md bg-violet-900/40 px-2 py-0.5 font-mono text-[11px] text-violet-300">{l}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="flex gap-3 font-mono text-[11px] text-zinc-600">
-            <span>skin: <span className="text-zinc-400">{result.signature.skinTexture}</span></span>
-            <span>style: <span className="text-zinc-400">{result.signature.styleFingerprint}</span></span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Dynamics analysis panel ──────────────────────────────────────────────────
-
-function DynamicsPanel({
-  state, result, frameCount,
-}: {
-  state: AnalysisState;
-  result: GeneratorResult | null;
-  frameCount: number;
-}) {
-  if (state === "idle") return null;
-
-  const borderCls =
-    state === "extracting" ? "border-blue-800/60 bg-blue-950/30" :
-    state === "done"       ? "border-cyan-800/60 bg-cyan-950/20" :
-                             "border-red-800/60 bg-red-950/20";
-
-  const sig  = result?.signature;
-  const info = result?.analysis;
-  const styleMeta = sig
-    ? (INTERACTION_STYLE_META[sig.interactionStyle] ?? INTERACTION_STYLE_META["contained"])
-    : null;
-
-  return (
-    <div className={`rounded-2xl border px-5 py-4 space-y-3 ${borderCls}`}>
-      <div className="flex items-center gap-2.5">
-        {state === "extracting" && <Spinner className="h-4 w-4 text-blue-400" />}
-        {state === "done"       && <CheckIcon className="h-4 w-4 text-cyan-400" />}
-        {state === "error"      && <WarnIcon  className="h-4 w-4 text-red-400" />}
-        <p className={`text-sm font-semibold ${
-          state === "extracting" ? "text-blue-300" :
-          state === "done"       ? "text-cyan-300" : "text-red-300"
-        }`}>
-          {state === "extracting" && "다이내믹스 레이어 분석 중…"}
-          {state === "done"       && "다이내믹스 레이어 분석 완료"}
-          {state === "error"      && "다이내믹스 분석 실패"}
-        </p>
-        {state === "done" && result && (
-          <span className="ml-auto text-xs text-zinc-600">
-            {result.frameCount}프레임 · {formatMs(result.durationMs)}
-          </span>
-        )}
-      </div>
-
-      {state === "extracting" && (
-        <p className="text-xs text-zinc-500">
-          수집된 {frameCount}개 프레임에서 속도·가속도·관절 각도 분석 중입니다.
-        </p>
-      )}
-
-      {state === "done" && sig && info && (
-        <div className="space-y-3">
-          {/* Stats row */}
-          <div className="flex flex-wrap gap-3">
-            <div className="rounded-lg bg-zinc-900/60 px-3 py-2 text-center">
-              <p className="font-mono text-lg font-bold text-white">
-                {sig.movementTempo > 0 ? sig.movementTempo : "—"}
-              </p>
-              <p className="text-[10px] text-zinc-500">BPM</p>
-            </div>
-            <div className="rounded-lg bg-zinc-900/60 px-3 py-2 text-center">
-              <p className="font-mono text-lg font-bold text-white">{info.peakFrames.length}</p>
-              <p className="text-[10px] text-zinc-500">모션 피크</p>
-            </div>
-            <div className="rounded-lg bg-zinc-900/60 px-3 py-2 text-center">
-              <p className="font-mono text-lg font-bold text-white">
-                {info.dominantPeriodMs > 0 ? formatMs(info.dominantPeriodMs) : "—"}
-              </p>
-              <p className="text-[10px] text-zinc-500">주기</p>
-            </div>
-            {styleMeta && (
-              <div className="flex items-center">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${styleMeta.className}`}>
-                  {styleMeta.label}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Gesture vocabulary */}
-          {sig.gestureVocabulary.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">감지된 제스처</p>
-              <div className="flex flex-wrap gap-1.5">
-                {sig.gestureVocabulary.map((g) => (
-                  <span key={g} className="rounded-md bg-cyan-900/40 px-2 py-0.5 font-mono text-[11px] text-cyan-300">{g}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Microexpressions */}
-          {sig.microexpressions.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">마이크로 표정 (FACS)</p>
-              <div className="flex flex-wrap gap-1.5">
-                {sig.microexpressions.map((au) => (
-                  <span key={au} className="rounded-md bg-violet-900/40 px-2 py-0.5 font-mono text-[11px] text-violet-300">{au}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Posture baseline (first 4 joints with labels) */}
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">자세 기준 벡터 (도°)</p>
-            <div className="flex flex-wrap gap-1.5">
-              {["L팔꿈치", "R팔꿈치", "L어깨", "R어깨", "L고관절", "R고관절", "L무릎", "R무릎"].map((label, i) => (
-                <span key={label} className="rounded-md bg-zinc-800 px-2 py-0.5 font-mono text-[11px] text-zinc-400">
-                  {label} {sig.postureBaseline[i]?.toFixed(1) ?? "—"}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ChallengePage() {
   const router = useRouter();
 
-  // Capture state
-  const [captureState,  setCaptureState]  = useState<CaptureState>("idle");
-  const [registerState, setRegisterState] = useState<RegisterState>("idle");
-  const [previewUrl,    setPreviewUrl]    = useState<string | null>(null);
-  const [elapsed,       setElapsed]       = useState(0);
-  const [error,         setError]         = useState<string | null>(null);
-  const [audioLevel,    setAudioLevel]    = useState(0);
-
-  // Visual extraction
-  const [visualState,  setVisualState]  = useState<AnalysisState>("idle");
-  const [visualResult, setVisualResult] = useState<ExtractionResult | null>(null);
-  const [visualError,  setVisualError]  = useState<string | null>(null);
-  const visualResultRef = useRef<ExtractionResult | null>(null);
-
-  // Dynamics analysis
-  const [dynamicsState,  setDynamicsState]  = useState<AnalysisState>("idle");
-  const [dynamicsResult, setDynamicsResult] = useState<GeneratorResult | null>(null);
+  // State machine
+  const [captureState,      setCaptureState]      = useState<CaptureState>("idle");
+  const [facingMode,        setFacingMode]        = useState<FacingMode>("user");
+  const [elapsed,           setElapsed]           = useState(0);
+  const [error,             setError]             = useState<string | null>(null);
+  const [watermarkProgress, setWatermarkProgress] = useState(0);
+  const [watermarkResult,   setWatermarkResult]   = useState<WatermarkResult | null>(null);
+  const [previewUrl,        setPreviewUrl]        = useState<string | null>(null);
+  const [registerState,     setRegisterState]     = useState<RegisterState>("idle");
+  const [pendingWatermark,  setPendingWatermark]  = useState(false);
 
   // DOM refs
   const liveVideoRef    = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
 
   // Recording internals
-  const mediaRecorderRef   = useRef<MediaRecorder | null>(null);
-  const streamRef          = useRef<MediaStream | null>(null);
-  const chunksRef          = useRef<Blob[]>([]);
-  const timerRef           = useRef<ReturnType<typeof setInterval> | null>(null);
-  const frameIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const capturedFramesRef  = useRef<CaptureFrame[]>([]);
-  const recordingStartRef  = useRef(0);
+  const streamRef           = useRef<MediaStream | null>(null);
+  const mediaRecorderRef    = useRef<MediaRecorder | null>(null);
+  const chunksRef           = useRef<Blob[]>([]);
+  const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
+  const frameIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rawBlobRef          = useRef<Blob | null>(null);
+
+  // Bio extraction
+  const capturedFramesRef   = useRef<CaptureFrame[]>([]);
   const isCapturingFrameRef = useRef(false);
+  const recordingStartRef   = useRef(0);
+  const visualResultRef     = useRef<ExtractionResult | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const dynamicsResultRef   = useRef<GeneratorResult | null>(null);
 
-  // Audio meter
-  const analyserRef   = useRef<AnalyserNode | null>(null);
-  const animFrameRef  = useRef<number | null>(null);
-
-  // ── Audio meter ────────────────────────────────────────────────────────────
-  const startAudioMeter = useCallback((stream: MediaStream) => {
-    const ctx      = new AudioContext();
-    const source   = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    analyserRef.current = analyser;
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => {
-      analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      setAudioLevel(Math.min(100, (avg / 128) * 100));
-      animFrameRef.current = requestAnimationFrame(tick);
-    };
-    animFrameRef.current = requestAnimationFrame(tick);
-  }, []);
-
-  const stopAudioMeter = useCallback(() => {
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    setAudioLevel(0);
-  }, []);
-
-  // ── Enable camera ──────────────────────────────────────────────────────────
-  const enableCamera = useCallback(async () => {
+  // ── Start camera ─────────────────────────────────────────────────────────────
+  const startCamera = useCallback(async (facing: FacingMode) => {
     setError(null);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+        video: { width: { ideal: 1080 }, height: { ideal: 1920 }, facingMode: facing },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       streamRef.current = stream;
       if (liveVideoRef.current) liveVideoRef.current.srcObject = stream;
-      startAudioMeter(stream);
       setCaptureState("ready");
     } catch {
-      setError("카메라 또는 마이크 권한이 거부되었습니다.");
+      setError("카메라 또는 마이크 접근 권한이 필요합니다.");
     }
-  }, [startAudioMeter]);
+  }, []);
 
-  // ── Per-frame landmark capture (runs during recording) ─────────────────────
+  // ── Flip camera ───────────────────────────────────────────────────────────────
+  const flipCamera = useCallback(() => {
+    const next: FacingMode = facingMode === "user" ? "environment" : "user";
+    setFacingMode(next);
+    startCamera(next);
+  }, [facingMode, startCamera]);
+
+  // ── Per-frame landmark capture (5 fps during recording) ───────────────────────
   const captureFrame = useCallback(async () => {
     if (isCapturingFrameRef.current || !liveVideoRef.current) return;
     isCapturingFrameRef.current = true;
@@ -384,49 +117,16 @@ export default function ChallengePage() {
     }
   }, []);
 
-  // ── Visual extraction (runs after recording stops) ─────────────────────────
-  const runVisualExtraction = useCallback(async () => {
-    const video = liveVideoRef.current;
-    if (!video) return;
-    setVisualState("extracting");
-    setVisualError(null);
-    try {
-      const result = await extractVisualSignature(video);
-      visualResultRef.current = result;
-      setVisualResult(result);
-      setVisualState("done");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "알 수 없는 오류";
-      setVisualError(`시각 추출 실패: ${msg}`);
-      setVisualState("error");
-    }
-  }, []);
-
-  // ── Dynamics analysis (synchronous — runs on collected frames) ─────────────
-  const runDynamicsAnalysis = useCallback(() => {
-    const frames = capturedFramesRef.current;
-    if (frames.length < 2) return;
-    setDynamicsState("extracting");
-    // requestAnimationFrame lets React flush "extracting" state before CPU work
-    requestAnimationFrame(() => {
-      try {
-        const result = generateDynamicsSignature(frames);
-        setDynamicsResult(result);
-        setDynamicsState("done");
-      } catch {
-        setDynamicsState("error");
-      }
-    });
-  }, []);
-
-  // ── Start recording ────────────────────────────────────────────────────────
+  // ── Start recording ────────────────────────────────────────────────────────────
   const startRecording = useCallback(() => {
     const stream = streamRef.current;
     if (!stream) return;
 
-    chunksRef.current       = [];
+    chunksRef.current         = [];
     capturedFramesRef.current = [];
     recordingStartRef.current = Date.now();
+    visualResultRef.current   = null;
+    dynamicsResultRef.current = null;
 
     const mimeType =
       ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
@@ -435,273 +135,446 @@ export default function ChallengePage() {
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     mediaRecorderRef.current = recorder;
 
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
 
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType || "video/webm" });
-      setPreviewUrl(URL.createObjectURL(blob));
-      setCaptureState("preview");
-      // Run both analyses concurrently; visual uses the still-live stream frame
-      runVisualExtraction();
-      runDynamicsAnalysis();
+      rawBlobRef.current = blob;
+      setPendingWatermark(true);
     };
 
     recorder.start(100);
     setElapsed(0);
     setCaptureState("recording");
-    timerRef.current = setInterval(() => setElapsed((p) => p + 1), 1000);
-
-    // Capture landmark frames every 200 ms (≈ 5 fps)
+    timerRef.current         = setInterval(() => setElapsed((p) => p + 1), 1000);
     frameIntervalRef.current = setInterval(() => { captureFrame(); }, 200);
-  }, [captureFrame, runVisualExtraction, runDynamicsAnalysis]);
+  }, [captureFrame]);
 
-  // ── Stop recording ─────────────────────────────────────────────────────────
+  // ── Stop recording ─────────────────────────────────────────────────────────────
   const stopRecording = useCallback(() => {
-    if (timerRef.current)       clearInterval(timerRef.current);
+    if (timerRef.current)        clearInterval(timerRef.current);
     if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+    setCaptureState("watermarking");
+    setWatermarkProgress(0);
     mediaRecorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
-  // ── Reset ──────────────────────────────────────────────────────────────────
+  // ── Watermark effect ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!pendingWatermark) return;
+    setPendingWatermark(false);
+    const blob = rawBlobRef.current;
+    if (!blob) return;
+
+    let cancelled = false;
+
+    // Bio extraction in background (non-blocking, best-effort)
+    if (liveVideoRef.current) {
+      extractVisualSignature(liveVideoRef.current)
+        .then((r) => { if (!cancelled) visualResultRef.current = r; })
+        .catch(() => {});
+    }
+    if (capturedFramesRef.current.length >= 2) {
+      requestAnimationFrame(() => {
+        try { dynamicsResultRef.current = generateDynamicsSignature(capturedFramesRef.current); }
+        catch {}
+      });
+    }
+
+    applyWatermark(blob, {
+      uniqueId:   generateWatermarkId(),
+      onProgress: (r) => { if (!cancelled) setWatermarkProgress(Math.round(r * 100)); },
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setWatermarkResult(result);
+        const url = URL.createObjectURL(result.blob);
+        setPreviewUrl(url);
+        setCaptureState("preview");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Fallback: show raw video without watermark
+        const url = URL.createObjectURL(blob);
+        setPreviewUrl(url);
+        setCaptureState("preview");
+      });
+
+    return () => { cancelled = true; };
+  }, [pendingWatermark]);
+
+  // ── Reset to camera ────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
-    setElapsed(0);
-    setVisualState("idle");  setVisualResult(null);  setVisualError(null);
-    setDynamicsState("idle"); setDynamicsResult(null);
+    setWatermarkResult(null);
+    setWatermarkProgress(0);
     setRegisterState("idle");
-    visualResultRef.current   = null;
+    rawBlobRef.current        = null;
     capturedFramesRef.current = [];
-    setCaptureState("ready");
-  }, [previewUrl]);
+    setElapsed(0);
+    setError(null);
+    startCamera(facingMode);
+  }, [previewUrl, facingMode, startCamera]);
 
-  // ── Bio-IP registration ────────────────────────────────────────────────────
-  const registerBioIP = useCallback(async () => {
-    setRegisterState("signing");
-    if (!visualResultRef.current && liveVideoRef.current) {
-      try {
-        const r = await extractVisualSignature(liveVideoRef.current);
-        visualResultRef.current = r;
-        setVisualResult(r);
-        setVisualState("done");
-      } catch { /* proceed without */ }
-    } else {
-      await new Promise((r) => setTimeout(r, 700));
-    }
-    setRegisterState("registering");
-    // TODO: persist visualResultRef.current + dynamicsResult to Supabase
-    await new Promise((r) => setTimeout(r, 2000));
-    setRegisterState("done");
-    await new Promise((r) => setTimeout(r, 800));
-    router.push("/my-bio-ip");
-  }, [router]);
-
-  // ── Download ───────────────────────────────────────────────────────────────
-  const downloadRecording = useCallback(() => {
+  // ── Download ───────────────────────────────────────────────────────────────────
+  const downloadVideo = useCallback(() => {
     if (!previewUrl) return;
+    const ext = watermarkResult?.mimeType.includes("mp4") ? "mp4" : "webm";
     const a = document.createElement("a");
-    a.href = previewUrl; a.download = `bio-challenge-${Date.now()}.webm`; a.click();
-  }, [previewUrl]);
+    a.href     = previewUrl;
+    a.download = `bio-ip-${watermarkResult?.uniqueId ?? "challenge"}.${ext}`;
+    a.click();
+  }, [previewUrl, watermarkResult]);
 
-  // ── Cleanup on unmount ─────────────────────────────────────────────────────
+  // ── SNS share (Web Share API) ──────────────────────────────────────────────────
+  const shareVideo = useCallback(async () => {
+    const blob = watermarkResult?.blob ?? rawBlobRef.current;
+    if (!blob) return;
+    const ext  = blob.type.includes("mp4") ? "mp4" : "webm";
+    const file = new File([blob], `bio-ip-challenge.${ext}`, { type: blob.type });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "BIO-IP Challenge", text: "나의 Bio-IP 챌린지 🎬" });
+      } else if (navigator.share) {
+        await navigator.share({ title: "BIO-IP Challenge", url: window.location.href });
+      }
+    } catch { /* user cancelled */ }
+  }, [watermarkResult]);
+
+  // ── Bio-IP registration ────────────────────────────────────────────────────────
+  const registerBioIP = useCallback(async () => {
+    setRegisterState("working");
+
+    try {
+      // 1. Ensure visual extraction has run (uses frozen last frame)
+      if (!visualResultRef.current && liveVideoRef.current) {
+        try { visualResultRef.current = await extractVisualSignature(liveVideoRef.current); }
+        catch {}
+      }
+
+      // 2. Resolve user ID (auth session or guest localStorage UUID)
+      const userId = await getOrCreateUserId();
+
+      // 3. Upload watermarked video to Supabase Storage
+      const blob = watermarkResult?.blob ?? rawBlobRef.current;
+      if (!blob) throw new Error("녹화된 영상이 없습니다.");
+      const videoUrl = await uploadVideo(blob, userId);
+
+      // 4. Extract face/pose landmarks from captured frames (last frame with data)
+      const frames = capturedFramesRef.current;
+      const lastFrame = frames.length > 0 ? frames[frames.length - 1] : null;
+      const faceLandmarks = lastFrame?.face ?? [];
+      const poseLandmarks = lastFrame?.pose ?? [];
+
+      // 5. Save to bio_ip_assets table
+      await saveBioIPAsset({
+        userId,
+        videoUrl,
+        faceLandmarks,
+        poseLandmarks,
+        watermarkId: watermarkResult?.uniqueId ?? generateWatermarkId(),
+      });
+
+      setRegisterState("done");
+      await new Promise((r) => setTimeout(r, 700));
+      router.push("/my-bio-ip");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "등록 중 오류가 발생했습니다.");
+      setRegisterState("idle");
+    }
+  }, [router, watermarkResult]);
+
+  // ── Cleanup on unmount ─────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (timerRef.current)        clearInterval(timerRef.current);
       if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
-      stopAudioMeter();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       disposeMediaPipe();
     };
-  }, [stopAudioMeter]);
+  }, []);
 
-  // ── Sync preview src ───────────────────────────────────────────────────────
+  // ── Sync preview video src ─────────────────────────────────────────────────────
   useEffect(() => {
     if (previewVideoRef.current && previewUrl) previewVideoRef.current.src = previewUrl;
   }, [previewUrl]);
 
-  const isLive    = captureState === "ready" || captureState === "recording";
-  const isPreview = captureState === "preview";
-  const isAnalyzing = visualState === "extracting" || dynamicsState === "extracting";
+  const isLive        = captureState === "ready" || captureState === "recording";
+  const isRecording   = captureState === "recording";
+  const isWatermarking = captureState === "watermarking";
+  const isPreview     = captureState === "preview";
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render — fixed overlay covering the full screen (including NavBar)
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-zinc-950 text-white">
-      {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Bio-IP Challenge Capture</h1>
-            <p className="mt-0.5 text-sm text-zinc-400">웹캠·마이크 녹화 + 생체 서명 자동 분석</p>
+    <div className="fixed inset-0 z-40 overflow-hidden bg-black">
+
+      {/* ── Live camera feed — always mounted so last frame stays for MediaPipe ── */}
+      <video
+        ref={liveVideoRef}
+        autoPlay
+        muted
+        playsInline
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${
+          isLive ? "opacity-100" : "opacity-0"
+        }`}
+        style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
+      />
+
+      {/* ── Watermarked preview video ──────────────────────────────────────── */}
+      {isPreview && previewUrl && (
+        <video
+          ref={previewVideoRef}
+          autoPlay
+          loop
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          IDLE — camera start prompt
+      ════════════════════════════════════════════════════════════════════ */}
+      {captureState === "idle" && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 px-8 text-center">
+          <div className="space-y-3">
+            <h1 className="text-3xl font-extrabold tracking-tight text-white">Bio-IP 챌린지</h1>
+            <p className="text-sm leading-relaxed text-zinc-400">
+              카메라와 마이크를 켜고<br />나만의 생체 IP를 기록하세요
+            </p>
           </div>
-          <StatusBadge state={captureState} />
+
+          {error && (
+            <p className="w-full max-w-xs rounded-2xl border border-red-800 bg-red-950/60 px-4 py-3 text-sm text-red-300">
+              {error}
+            </p>
+          )}
+
+          <button
+            onClick={() => startCamera(facingMode)}
+            className="flex h-24 w-24 items-center justify-center rounded-full bg-violet-600 shadow-xl shadow-violet-900/60 active:scale-95"
+            aria-label="카메라 시작"
+          >
+            <svg className="h-10 w-10 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path fillRule="evenodd" d="M9.344 3.071a49.52 49.52 0 015.312 0c.967.052 1.83.585 2.332 1.39l.821 1.317c.24.383.645.643 1.11.71.386.054.77.113 1.152.177 1.432.239 2.429 1.493 2.429 2.909V18a3 3 0 01-3 3h-15a3 3 0 01-3-3V9.574c0-1.416.997-2.67 2.429-2.909.382-.064.766-.123 1.151-.177a1.56 1.56 0 001.11-.71l.822-1.317a2.929 2.929 0 012.332-1.39zM6.75 12.75a5.25 5.25 0 1110.5 0 5.25 5.25 0 01-10.5 0zm12-1.5a.75.75 0 100 1.5.75.75 0 000-1.5z" clipRule="evenodd" />
+            </svg>
+          </button>
+
+          <p className="text-xs text-zinc-600">탭하여 카메라 시작</p>
         </div>
-      </header>
+      )}
 
-      <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
-        {/* Error */}
-        {error && (
-          <div className="rounded-lg border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-300">{error}</div>
-        )}
+      {/* ════════════════════════════════════════════════════════════════════
+          WATERMARKING — progress overlay
+      ════════════════════════════════════════════════════════════════════ */}
+      {isWatermarking && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-7 bg-black px-8">
+          <Spinner className="h-14 w-14 text-violet-400" />
+          <div className="w-full max-w-xs space-y-3">
+            <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-violet-500 transition-all duration-300"
+                style={{ width: `${watermarkProgress}%` }}
+              />
+            </div>
+            <p className="text-center text-sm text-zinc-400">
+              워터마크 적용 중… {watermarkProgress}%
+            </p>
+          </div>
+        </div>
+      )}
 
-        {/* Video area */}
-        <div className={`grid gap-4 ${isPreview ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
-          {/* Live feed */}
-          <div className="space-y-2">
-            {isLive && <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">라이브</p>}
-            <div className="relative aspect-video overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 flex items-center justify-center">
-              {captureState === "idle" ? (
-                <div className="flex flex-col items-center gap-3 px-8 text-center">
-                  <svg className="h-16 w-16 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                  </svg>
-                  <p className="text-sm text-zinc-400">카메라와 마이크 접근을 허용하면 라이브 영상이 표시됩니다</p>
-                </div>
+      {/* ════════════════════════════════════════════════════════════════════
+          RECORDING — red dot + timer (top center)
+      ════════════════════════════════════════════════════════════════════ */}
+      {isRecording && (
+        <div
+          className="absolute left-0 right-0 top-0 z-20 flex justify-center"
+          style={{ paddingTop: "max(3.5rem, calc(env(safe-area-inset-top, 0px) + 2rem))" }}
+        >
+          <div className="flex items-center gap-2.5 rounded-full bg-black/55 px-5 py-2.5 backdrop-blur-md">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+            <span className="font-mono text-lg font-bold tabular-nums text-white">
+              {formatTime(elapsed)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          TOP BAR — back/retry (left) + flip camera / watermark ID (right)
+          Shown when live (not recording) or in preview.
+      ════════════════════════════════════════════════════════════════════ */}
+      {(isLive || isPreview) && !isRecording && (
+        <div
+          className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4"
+          style={{ paddingTop: "max(3rem, calc(env(safe-area-inset-top, 0px) + 1.5rem))" }}
+        >
+          {/* Back (ready) or Retry (preview) */}
+          <button
+            onClick={isPreview ? reset : () => router.push("/")}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+            aria-label={isPreview ? "다시 녹화" : "뒤로"}
+          >
+            {isPreview ? (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              </svg>
+            )}
+          </button>
+
+          {/* Flip camera button (only when ready) */}
+          {captureState === "ready" && (
+            <button
+              onClick={flipCamera}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+              aria-label="카메라 전환"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
+          )}
+
+          {/* Watermark ID badge (preview only) */}
+          {isPreview && watermarkResult && (
+            <div className="max-w-[12rem] truncate rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md">
+              <span className="font-mono text-[10px] tracking-wide text-zinc-300">
+                {watermarkResult.uniqueId}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          BOTTOM — record / stop + flip camera
+      ════════════════════════════════════════════════════════════════════ */}
+      {isLive && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-20"
+          style={{ paddingBottom: "max(2.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem))" }}
+        >
+          <div className="bg-gradient-to-t from-black/80 to-transparent pt-16">
+            <div className="flex items-center justify-center gap-10">
+              {/* Left spacer keeps record btn centered */}
+              <div className="w-14" />
+
+              {/* Record (ready) or Stop (recording) */}
+              {captureState === "ready" ? (
+                <button
+                  onClick={startRecording}
+                  className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white shadow-xl active:scale-90"
+                  aria-label="녹화 시작"
+                >
+                  <span className="h-10 w-10 rounded-full bg-red-500" />
+                </button>
               ) : (
-                <video ref={liveVideoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+                <button
+                  onClick={stopRecording}
+                  className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white shadow-xl active:scale-90"
+                  aria-label="녹화 정지"
+                >
+                  <span className="h-8 w-8 rounded-lg bg-white" />
+                </button>
               )}
-              {captureState === "recording" && (
-                <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-sm">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-                  <span className="font-mono text-sm font-semibold">{formatTime(elapsed)}</span>
-                </div>
-              )}
-              {captureState === "recording" && capturedFramesRef.current.length > 0 && (
-                <div className="absolute right-3 top-3 rounded-full bg-black/60 px-2.5 py-1 backdrop-blur-sm">
-                  <span className="font-mono text-xs text-cyan-400">{capturedFramesRef.current.length}f</span>
-                </div>
+
+              {/* Flip camera (only when ready) */}
+              {captureState === "ready" ? (
+                <button
+                  onClick={flipCamera}
+                  className="flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm active:scale-90"
+                  aria-label="카메라 전환"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                  </svg>
+                </button>
+              ) : (
+                <div className="w-14" />
               )}
             </div>
-            {isLive && (
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 3a4 4 0 014 4v4a4 4 0 01-8 0V7a4 4 0 014-4z" />
-                </svg>
-                <div className="flex-1 h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-75" style={{ width: `${audioLevel}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          BOTTOM — preview action buttons
+      ════════════════════════════════════════════════════════════════════ */}
+      {isPreview && (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-20"
+          style={{ paddingBottom: "max(2.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem))" }}
+        >
+          <div className="bg-gradient-to-t from-black/95 via-black/65 to-transparent px-5 pt-20">
+
+            {registerState === "idle" && (
+              <div className="flex flex-col gap-3">
+                {/* Primary: Bio-IP 등록 */}
+                <button
+                  onClick={registerBioIP}
+                  className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 text-base font-bold text-white shadow-lg shadow-violet-900/50 active:scale-[0.97]"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                  </svg>
+                  Bio-IP 등록
+                </button>
+
+                {/* Secondary: Download + Share */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={downloadVideo}
+                    className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-semibold text-white backdrop-blur-md active:scale-[0.97]"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    다운로드
+                  </button>
+
+                  <button
+                    onClick={shareVideo}
+                    className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-semibold text-white backdrop-blur-md active:scale-[0.97]"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+                    </svg>
+                    SNS 공유
+                  </button>
                 </div>
-                <span className="w-8 text-right text-xs text-zinc-500">{Math.round(audioLevel)}%</span>
+              </div>
+            )}
+
+            {registerState === "working" && (
+              <div className="flex flex-col items-center gap-4 py-6">
+                <Spinner className="h-10 w-10 text-violet-400" />
+                <p className="text-sm font-medium text-zinc-300">Bio-IP 등록 중…</p>
+              </div>
+            )}
+
+            {registerState === "done" && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600">
+                  <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                </div>
+                <p className="text-sm font-semibold text-emerald-300">등록 완료! 이동 중…</p>
               </div>
             )}
           </div>
-
-          {/* Preview */}
-          {isPreview && previewUrl && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">녹화본</p>
-              <div className="relative aspect-video overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900">
-                <video ref={previewVideoRef} controls playsInline className="h-full w-full object-cover" />
-              </div>
-            </div>
-          )}
         </div>
-
-        {/* Analysis panels (2-column on desktop) */}
-        {isPreview && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <VisualPanel
-              state={visualState}
-              result={visualResult}
-              error={visualError}
-            />
-            <DynamicsPanel
-              state={dynamicsState}
-              result={dynamicsResult}
-              frameCount={capturedFramesRef.current.length}
-            />
-          </div>
-        )}
-
-        {/* Controls */}
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          {captureState === "idle" && (
-            <button onClick={enableCamera}
-              className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-95">
-              카메라 활성화
-            </button>
-          )}
-          {captureState === "ready" && (
-            <button onClick={startRecording}
-              className="flex items-center gap-2 rounded-xl bg-red-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-red-500 active:scale-95">
-              <span className="h-2.5 w-2.5 rounded-full bg-white" /> 녹화 시작
-            </button>
-          )}
-          {captureState === "recording" && (
-            <button onClick={stopRecording}
-              className="flex items-center gap-2 rounded-xl bg-zinc-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-zinc-600 active:scale-95">
-              <span className="h-2.5 w-2.5 rounded-sm bg-white" /> 녹화 정지
-            </button>
-          )}
-
-          {captureState === "preview" && registerState === "idle" && (
-            <>
-              <button onClick={reset}
-                className="rounded-xl border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white active:scale-95">
-                다시 녹화
-              </button>
-              <button onClick={downloadRecording}
-                className="rounded-xl bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500 active:scale-95">
-                다운로드
-              </button>
-              <button onClick={registerBioIP} disabled={isAnalyzing}
-                className={`flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition active:scale-95 ${
-                  isAnalyzing
-                    ? "cursor-not-allowed bg-violet-800/40 opacity-60"
-                    : "bg-violet-600 hover:bg-violet-500"
-                }`}>
-                {isAnalyzing ? (
-                  <><Spinner className="h-4 w-4 text-violet-300" /> 분석 중…</>
-                ) : (
-                  <>
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-                    </svg>
-                    Bio-IP 등록
-                  </>
-                )}
-              </button>
-            </>
-          )}
-
-          {captureState === "preview" && registerState !== "idle" && (
-            <div className="w-full max-w-sm space-y-3">
-              {REGISTER_STEPS.map(({ key, label, doneLabel }) => {
-                const stepOrder   = REGISTER_STEPS.findIndex((s) => s.key === key);
-                const activeOrder = REGISTER_STEPS.findIndex((s) => s.key === registerState);
-                const isActive    = key === registerState;
-                const isDone      = stepOrder < activeOrder || registerState === "done";
-                return (
-                  <div key={key} className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all ${
-                    isActive ? "border-violet-600 bg-violet-950/40" :
-                    isDone   ? "border-emerald-800 bg-emerald-950/30" :
-                               "border-zinc-800 bg-zinc-900/40 opacity-40"
-                  }`}>
-                    <span className="flex-shrink-0">
-                      {isDone   ? <CheckIcon className="h-5 w-5 text-emerald-400" />
-                       : isActive ? <Spinner className="h-5 w-5 text-violet-400" />
-                       : <span className="block h-5 w-5 rounded-full border-2 border-zinc-700" />}
-                    </span>
-                    <span className={`text-sm font-medium ${isDone ? "text-emerald-300" : isActive ? "text-violet-200" : "text-zinc-500"}`}>
-                      {isDone ? doneLabel : label}
-                    </span>
-                    {isActive && <span className="ml-auto h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-violet-400" />}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Hint */}
-        <p className="text-center text-xs text-zinc-600">
-          {captureState === "idle"      && "카메라 활성화 버튼을 눌러 시작하세요."}
-          {captureState === "ready"     && "준비됨. 녹화 시작 버튼을 누르세요."}
-          {captureState === "recording" && `녹화 중 · ${capturedFramesRef.current.length}개 프레임 수집됨.`}
-          {captureState === "preview" && registerState === "idle" && isAnalyzing     && "생체 신호를 분석하고 있습니다…"}
-          {captureState === "preview" && registerState === "idle" && !isAnalyzing    && "분석 완료. Bio-IP를 등록하거나 다운로드하세요."}
-          {captureState === "preview" && registerState === "signing"     && "추출된 시각·다이내믹스 서명으로 서명 생성 중…"}
-          {captureState === "preview" && registerState === "registering" && "블록체인에 자산을 기록하고 있습니다…"}
-          {captureState === "preview" && registerState === "done"        && "등록 완료! My Bio-IP로 이동합니다."}
-        </p>
-      </div>
-    </main>
+      )}
+    </div>
   );
 }

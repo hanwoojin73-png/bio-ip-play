@@ -1,244 +1,212 @@
-import type { BioIPAsset, AssetStatus, LicenseScope } from "@/types/bio-ip";
+"use client";
 
-// ─── Sample data ───────────────────────────────────────────────────────────────
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  getBioIPAssets,
+  getOrCreateUserId,
+  type BioIPAssetRecord,
+} from "@/lib/supabase/upload";
 
-const SAMPLE_ASSETS: BioIPAsset[] = [
-  {
-    id: "asset-001",
-    ownerId: "user-han",
-    bioSignatureId: "sig-001",
-    title: "Han Visual & Vocal Identity v1",
-    description:
-      "Full biometric identity capture covering facial geometry, vocal timbre, and expressive range. Registered for entertainment and brand licensing.",
-    status: "registered",
-    licenseTerms: {
-      scope: "non_exclusive",
-      allowedUseCases: ["advertising", "entertainment", "education"],
-      prohibitedUseCases: ["political", "adult_content"],
-      territoryCodes: ["KR", "US", "JP"],
-      royaltyRateBps: 1000,
-    },
-    registeredAt: "2026-01-15T09:00:00Z",
-    updatedAt: "2026-06-10T14:22:00Z",
-    challenges: [],
-    metadataUri: "ipfs://QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco/001",
-  },
-  {
-    id: "asset-002",
-    ownerId: "user-han",
-    bioSignatureId: "sig-002",
-    title: "Motion Dynamics Layer – Dance",
-    description:
-      "Isolated dynamics-layer capture of choreographic gesture vocabulary and movement tempo. Specialised for metaverse avatar animation licensing.",
-    status: "disputed",
-    licenseTerms: {
-      scope: "exclusive",
-      allowedUseCases: ["metaverse", "gaming", "animation"],
-      prohibitedUseCases: ["surveillance", "political"],
-      territoryCodes: ["KR", "US"],
-      expiresAt: "2027-01-14T23:59:59Z",
-      royaltyRateBps: 2500,
-    },
-    registeredAt: "2026-03-02T11:30:00Z",
-    updatedAt: "2026-06-20T08:05:00Z",
-    challenges: ["challenge-alpha"],
-    metadataUri: "ipfs://QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco/002",
-  },
-  {
-    id: "asset-003",
-    ownerId: "user-han",
-    bioSignatureId: "sig-003",
-    title: "Vocal Signature – Narration Profile",
-    description:
-      "Vocal-layer-only capture optimised for AI voice synthesis licensing. Covers pitch contour, accent, and breathing pattern for Korean and English.",
-    status: "draft",
-    licenseTerms: {
-      scope: "personal_only",
-      allowedUseCases: ["voiceover", "audiobook"],
-      prohibitedUseCases: ["deepfake", "impersonation", "political"],
-      territoryCodes: ["KR"],
-      royaltyRateBps: 500,
-    },
-    registeredAt: "2026-06-25T16:45:00Z",
-    updatedAt: "2026-06-25T16:45:00Z",
-    challenges: [],
-  },
-];
-
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
+    year: "numeric", month: "short", day: "numeric",
   });
 }
 
-function bpsToPercent(bps: number) {
-  return (bps / 100).toFixed(1);
-}
-
-const STATUS_STYLES: Record<AssetStatus, { label: string; className: string }> = {
-  draft:      { label: "초안",    className: "bg-zinc-700 text-zinc-300" },
-  registered: { label: "등록됨",  className: "bg-emerald-900 text-emerald-300" },
-  disputed:   { label: "분쟁 중", className: "bg-amber-900 text-amber-300" },
-  revoked:    { label: "취소됨",  className: "bg-red-900 text-red-300" },
+const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
+  draft:      { label: "초안",    cls: "bg-zinc-700 text-zinc-300" },
+  registered: { label: "등록됨",  cls: "bg-emerald-900 text-emerald-300" },
+  disputed:   { label: "분쟁 중", cls: "bg-amber-900 text-amber-300" },
+  revoked:    { label: "취소됨",  cls: "bg-red-900 text-red-300" },
 };
 
-const SCOPE_LABEL: Record<LicenseScope, string> = {
-  exclusive:     "독점",
-  non_exclusive: "비독점",
-  personal_only: "개인 전용",
-};
+// ─── Spinner ──────────────────────────────────────────────────────────────────
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: AssetStatus }) {
-  const { label, className } = STATUS_STYLES[status];
+function Spinner() {
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${className}`}>
-      {label}
-    </span>
+    <svg className="h-6 w-6 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
   );
 }
 
-function LayerTag({ label }: { label: string }) {
-  return (
-    <span className="rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
-      {label}
-    </span>
-  );
-}
+// ─── Asset card ───────────────────────────────────────────────────────────────
 
-function UseCaseTag({ label, allowed }: { label: string; allowed: boolean }) {
-  return (
-    <span
-      className={`rounded-md px-2 py-0.5 text-xs ${
-        allowed
-          ? "bg-blue-950 text-blue-300"
-          : "bg-red-950 text-red-400 line-through"
-      }`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function AssetCard({ asset }: { asset: BioIPAsset }) {
-  const { licenseTerms: lt } = asset;
+function AssetCard({ asset }: { asset: BioIPAssetRecord }) {
+  const statusStyle = STATUS_STYLES[asset.status] ?? STATUS_STYLES["draft"];
+  const faceLandmarkCount = asset.face_landmarks?.length ?? 0;
+  const poseLandmarkCount = asset.pose_landmarks?.length ?? 0;
 
   return (
-    <article className="flex flex-col gap-5 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 transition hover:border-zinc-600">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold leading-snug text-white">
-            {asset.title}
-          </h2>
-          <p className="text-xs text-zinc-500 font-mono">{asset.id}</p>
-        </div>
-        <StatusBadge status={asset.status} />
-      </div>
-
-      {/* Description */}
-      <p className="text-sm leading-relaxed text-zinc-400">{asset.description}</p>
-
-      {/* Biometric layers (inferred from sigId prefix for demo) */}
-      <div className="flex flex-wrap gap-2">
-        {asset.bioSignatureId.includes("001") && (
-          <>
-            <LayerTag label="Visual" />
-            <LayerTag label="Vocal" />
-            <LayerTag label="Dynamics" />
-          </>
-        )}
-        {asset.bioSignatureId.includes("002") && <LayerTag label="Dynamics" />}
-        {asset.bioSignatureId.includes("003") && <LayerTag label="Vocal" />}
-      </div>
-
-      {/* Divider */}
-      <hr className="border-zinc-800" />
-
-      {/* License terms */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-zinc-500">라이선스 범위</span>
-          <span className="font-medium text-zinc-200">{SCOPE_LABEL[lt.scope]}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-zinc-500">로열티 비율</span>
-          <span className="font-mono font-semibold text-emerald-400">
-            {bpsToPercent(lt.royaltyRateBps)}%
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-zinc-500">적용 지역</span>
-          <span className="text-zinc-300">{lt.territoryCodes.join(" · ")}</span>
-        </div>
-        {lt.expiresAt && (
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-zinc-500">만료일</span>
-            <span className="text-amber-400">{formatDate(lt.expiresAt)}</span>
+    <article className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-5 transition hover:border-zinc-600">
+      {/* Video thumbnail */}
+      {asset.video_url ? (
+        <div className="relative aspect-video overflow-hidden rounded-xl bg-zinc-950">
+          <video
+            src={asset.video_url}
+            className="h-full w-full object-cover"
+            muted
+            playsInline
+            preload="metadata"
+          />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition hover:opacity-100">
+            <a
+              href={asset.video_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full bg-white/90 p-3"
+            >
+              <svg className="h-5 w-5 text-black" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </a>
           </div>
-        )}
+        </div>
+      ) : (
+        <div className="aspect-video rounded-xl bg-zinc-800 flex items-center justify-center">
+          <svg className="h-10 w-10 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+          </svg>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-white">{asset.title}</h2>
+          {asset.watermark_id && (
+            <p className="mt-0.5 font-mono text-[10px] text-zinc-500">{asset.watermark_id}</p>
+          )}
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusStyle.cls}`}>
+          {statusStyle.label}
+        </span>
       </div>
 
-      {/* Use cases */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium uppercase tracking-widest text-zinc-600">
-          허용 / 금지 사용처
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {lt.allowedUseCases.map((u) => (
-            <UseCaseTag key={u} label={u} allowed />
-          ))}
-          {lt.prohibitedUseCases.map((u) => (
-            <UseCaseTag key={u} label={u} allowed={false} />
-          ))}
+      {/* Bio data summary */}
+      {(faceLandmarkCount > 0 || poseLandmarkCount > 0) && (
+        <div className="flex gap-2">
+          {faceLandmarkCount > 0 && (
+            <div className="rounded-lg bg-zinc-800 px-3 py-1.5 text-center">
+              <p className="text-sm font-bold text-white">{faceLandmarkCount}</p>
+              <p className="text-[10px] text-zinc-500">얼굴 랜드마크</p>
+            </div>
+          )}
+          {poseLandmarkCount > 0 && (
+            <div className="rounded-lg bg-zinc-800 px-3 py-1.5 text-center">
+              <p className="text-sm font-bold text-white">{poseLandmarkCount}</p>
+              <p className="text-[10px] text-zinc-500">신체 관절</p>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between text-xs text-zinc-600">
-        <span>등록 {formatDate(asset.registeredAt)}</span>
-        <div className="flex items-center gap-3">
-          {asset.challenges.length > 0 && (
-            <span className="text-amber-500">
-              챌린지 {asset.challenges.length}건
-            </span>
+        <span>등록 {formatDate(asset.registered_at)}</span>
+        <div className="flex gap-2">
+          {asset.video_url && (
+            <a
+              href={asset.video_url}
+              download
+              className="rounded-md bg-zinc-800 px-2.5 py-1.5 text-zinc-300 transition hover:bg-zinc-700 hover:text-white"
+            >
+              다운로드
+            </a>
           )}
-          {asset.metadataUri && (
-            <span className="font-mono truncate max-w-[120px]" title={asset.metadataUri}>
-              {asset.metadataUri.slice(0, 20)}…
-            </span>
-          )}
+          <button className="rounded-md bg-violet-700/40 px-2.5 py-1.5 text-violet-300 transition hover:bg-violet-700 hover:text-white">
+            라이선스
+          </button>
         </div>
       </div>
-
-      {/* Actions */}
-      <div className="flex gap-2 pt-1">
-        <button className="flex-1 rounded-lg border border-zinc-700 py-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white">
-          상세 보기
-        </button>
-        <button className="flex-1 rounded-lg bg-violet-700 py-2 text-xs font-semibold text-white transition hover:bg-violet-600">
-          라이선스 관리
-        </button>
-      </div>
     </article>
+  );
+}
+
+// ─── Loading skeleton ──────────────────────────────────────────────────────────
+
+function SkeletonCard() {
+  return (
+    <div className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-5 animate-pulse">
+      <div className="aspect-video rounded-xl bg-zinc-800" />
+      <div className="space-y-2">
+        <div className="h-4 w-3/4 rounded bg-zinc-800" />
+        <div className="h-3 w-1/3 rounded bg-zinc-800" />
+      </div>
+      <div className="flex gap-2">
+        <div className="h-10 w-16 rounded-lg bg-zinc-800" />
+        <div className="h-10 w-16 rounded-lg bg-zinc-800" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyState() {
+  return (
+    <div className="col-span-full flex flex-col items-center gap-6 py-20 text-center">
+      <div className="rounded-full border border-zinc-700 bg-zinc-900 p-6">
+        <svg className="h-12 w-12 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+      </div>
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold text-white">아직 등록된 Bio-IP가 없어요</h3>
+        <p className="text-sm text-zinc-400">
+          챌린지를 참여하고 나만의 생체 IP를 등록해보세요
+        </p>
+      </div>
+      <Link
+        href="/challenge"
+        className="flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-95"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+          <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clipRule="evenodd" />
+        </svg>
+        첫 챌린지 참여하기
+      </Link>
+    </div>
   );
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MyBioIPPage() {
-  const total      = SAMPLE_ASSETS.length;
-  const registered = SAMPLE_ASSETS.filter((a) => a.status === "registered").length;
-  const disputed   = SAMPLE_ASSETS.filter((a) => a.status === "disputed").length;
+  const [assets,  setAssets]  = useState<BioIPAssetRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const userId = await getOrCreateUserId();
+        const data   = await getBioIPAssets(userId);
+        if (!cancelled) setAssets(data);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "데이터를 불러오지 못했습니다.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const registered = assets.filter((a) => a.status === "registered").length;
+  const disputed   = assets.filter((a) => a.status === "disputed").length;
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <header className="border-b border-zinc-800 px-6 py-6">
         <div className="mx-auto max-w-5xl">
           <h1 className="text-2xl font-bold tracking-tight">My Bio-IP</h1>
@@ -246,38 +214,67 @@ export default function MyBioIPPage() {
             등록된 생체 IP 자산을 관리하고 라이선스 현황을 확인하세요
           </p>
 
-          {/* Summary stats */}
-          <div className="mt-5 flex flex-wrap gap-4">
-            {[
-              { label: "전체 자산",  value: total,      color: "text-white" },
-              { label: "등록됨",     value: registered, color: "text-emerald-400" },
-              { label: "분쟁 중",    value: disputed,   color: "text-amber-400" },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3">
-                <p className="text-xs text-zinc-500">{label}</p>
-                <p className={`mt-0.5 text-2xl font-bold ${color}`}>{value}</p>
-              </div>
-            ))}
-          </div>
+          {/* Stats row */}
+          {!loading && (
+            <div className="mt-5 flex flex-wrap gap-4">
+              {[
+                { label: "전체 자산", value: assets.length, color: "text-white" },
+                { label: "등록됨",    value: registered,    color: "text-emerald-400" },
+                { label: "분쟁 중",   value: disputed,      color: "text-amber-400" },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3">
+                  <p className="text-xs text-zinc-500">{label}</p>
+                  <p className={`mt-0.5 text-2xl font-bold ${color}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {loading && (
+            <div className="mt-5 flex gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-16 w-28 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900" />
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Toolbar */}
+      {/* ── Toolbar ── */}
       <div className="border-b border-zinc-800 px-6 py-3">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <p className="text-sm text-zinc-400">
-            총 <span className="font-semibold text-white">{total}</span>개 자산
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner /> 불러오는 중…
+              </span>
+            ) : (
+              <>총 <span className="font-semibold text-white">{assets.length}</span>개 자산</>
+            )}
           </p>
-          <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500">
+          <Link
+            href="/challenge"
+            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500"
+          >
             + 새 자산 등록
-          </button>
+          </Link>
         </div>
       </div>
 
-      {/* Asset grid */}
+      {/* ── Error ── */}
+      {error && (
+        <div className="mx-auto mt-6 max-w-5xl px-6">
+          <div className="rounded-xl border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+            {error}
+          </div>
+        </div>
+      )}
+
+      {/* ── Asset grid ── */}
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {SAMPLE_ASSETS.map((asset) => (
+          {loading && [1, 2, 3].map((i) => <SkeletonCard key={i} />)}
+          {!loading && assets.length === 0 && !error && <EmptyState />}
+          {!loading && assets.map((asset) => (
             <AssetCard key={asset.id} asset={asset} />
           ))}
         </div>
