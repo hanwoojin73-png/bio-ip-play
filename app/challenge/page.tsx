@@ -338,29 +338,42 @@ export default function ChallengePage() {
   // ── Bio-IP registration ────────────────────────────────────────────────────────
   const registerBioIP = useCallback(async () => {
     setRegisterState("working");
+    setError(null);
     try {
-      if (!visualResultRef.current && liveVideoRef.current) {
-        try { visualResultRef.current = await extractVisualSignature(liveVideoRef.current); }
-        catch {}
-      }
+      console.log("[register] 시작");
+
       const userId = await getOrCreateUserId();
-      const blob   = rawBlobRef.current; // always upload the original video, not the thumbnail
+      console.log("[register] userId:", userId);
+
+      const blob = rawBlobRef.current;
       if (!blob) throw new Error("녹화된 영상이 없습니다.");
+      console.log("[register] blob:", blob.size, "bytes", blob.type);
+
+      console.log("[register] 영상 업로드 중…");
       const videoUrl = await uploadVideo(blob, userId);
-      const frames   = capturedFramesRef.current;
+      console.log("[register] 업로드 완료:", videoUrl);
+
+      const frames    = capturedFramesRef.current;
       const lastFrame = frames.length > 0 ? frames[frames.length - 1] : null;
+      const wId       = watermarkResult?.uniqueId ?? generateWatermarkId();
+
+      console.log("[register] DB 저장 중… watermarkId:", wId);
       await saveBioIPAsset({
         userId,
         videoUrl,
-        faceLandmarks:  lastFrame?.face ?? [],
-        poseLandmarks:  lastFrame?.pose ?? [],
-        watermarkId:    watermarkResult?.uniqueId ?? generateWatermarkId(),
+        faceLandmarks: lastFrame?.face ?? [],
+        poseLandmarks: lastFrame?.pose ?? [],
+        watermarkId:   wId,
       });
+      console.log("[register] DB 저장 완료");
+
       setRegisterState("done");
       await new Promise((r) => setTimeout(r, 700));
       router.push("/my-bio-ip");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "등록 중 오류가 발생했습니다.");
+      const msg = err instanceof Error ? err.message : "등록 중 오류가 발생했습니다.";
+      console.error("[register] 실패:", msg);
+      setError(msg);
       setRegisterState("idle");
     }
   }, [router, watermarkResult]);
@@ -703,10 +716,10 @@ export default function ChallengePage() {
         >
           <div className="bg-gradient-to-t from-black/95 via-black/65 to-transparent px-5 pt-20">
 
-            {/* Watermark error notice */}
-            {watermarkError && (
-              <div className="mb-3 rounded-xl border border-amber-800/60 bg-amber-950/40 px-4 py-2.5 text-xs text-amber-300">
-                워터마크 없이 저장됩니다: {watermarkError}
+            {/* Registration error */}
+            {error && registerState === "idle" && (
+              <div className="mb-3 rounded-xl border border-red-800/60 bg-red-950/50 px-4 py-3 text-xs text-red-300">
+                ⚠️ {error}
               </div>
             )}
 
