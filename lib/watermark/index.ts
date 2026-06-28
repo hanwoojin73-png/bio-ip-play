@@ -1,21 +1,13 @@
 /**
- * Canvas-based video watermarking.
+ * Canvas-only video watermarking — no ffmpeg, no external deps.
  *
  * Flow:
- *  1. Decode source blob into a hidden <video> element (muted for autoplay policy).
- *  2. Drive a <canvas> per-frame via requestAnimationFrame.
- *  3. Draw the original frame + watermark overlay on the canvas.
- *  4. Re-encode via MediaRecorder on canvas.captureStream().
- *  5. Return the watermarked blob.
- *
- * Falls back to source blob if re-encoding is unavailable or times out.
- *
- * Key fixes vs. original:
- *  - video.muted = true  (autoplay policy: unmuted programmatic play is blocked)
- *  - isFinite(duration) check (MediaRecorder webm has duration = Infinity)
- *  - Elapsed-time progress fallback when duration is unknown
- *  - 30-second hard timeout
- *  - console.error on every failure path
+ *  1. Load source Blob into a hidden <video> (muted for autoplay policy).
+ *  2. Fix WebM Infinity duration: seek to 1e101 so the browser clamps to real end.
+ *  3. Drive a <canvas> per-frame via requestAnimationFrame.
+ *  4. Draw original frame + watermark text overlay on canvas each frame.
+ *  5. Re-encode via MediaRecorder on canvas.captureStream() → new Blob.
+ *  6. Progress = video.currentTime / video.duration (now finite after step 2).
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,16 +16,16 @@ export interface WatermarkOptions {
   uniqueId?:   string;
   logoText?:   string;
   date?:       Date;
-  opacity?:    number;       // 0–1, default 0.85
-  fps?:        number;       // canvas capture fps, default 30
-  onProgress?: (ratio: number) => void;   // 0 → 1
+  opacity?:    number;     // 0–1, default 0.85
+  fps?:        number;     // canvas captureStream fps, default 30
+  onProgress?: (ratio: number) => void;  // 0 → 1
 }
 
 export interface WatermarkResult {
-  blob:        Blob;
-  uniqueId:    string;
-  mimeType:    string;
-  durationMs:  number;
+  blob:       Blob;
+  uniqueId:   string;
+  mimeType:   string;
+  durationMs: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,9 +88,8 @@ function drawWatermark(
   const bgY = ch - bgH - pad;
 
   ctx.save();
-
-  ctx.globalAlpha = opacity * 0.72;
-  ctx.fillStyle   = "rgba(0, 0, 0, 0.65)";
+  ctx.globalAlpha  = opacity * 0.72;
+  ctx.fillStyle    = "rgba(0,0,0,0.65)";
   fillRoundRect(ctx, bgX, bgY, bgW, bgH, 6);
 
   ctx.globalAlpha  = opacity;
@@ -118,8 +109,6 @@ function drawWatermark(
   ctx.restore();
 }
 
-// ─── MIME detection ───────────────────────────────────────────────────────────
-
 function pickMimeType(): string {
   const candidates = [
     "video/webm;codecs=vp9,opus",
@@ -130,20 +119,50 @@ function pickMimeType(): string {
   return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
 }
 
+// ─── WebM duration fix ────────────────────────────────────────────────────────
+// MediaRecorder WebM files have duration = Infinity.
+// Seeking to a huge timestamp forces the browser to clamp to the real end,
+// making video.duration finite on the subsequent 'seeked' event.
+async function fixWebMDuration(video: HTMLVideoElement): Promise<void> {
+  if (isFinite(video.duration) && video.duration > 0) return;
+
+  await new Promise<void>((resolve) => {
+    const onSeeked = () => {
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    };
+    video.addEventListener("seeked", onSeeked);
+    // Safety timeout in case 'seeked' never fires
+    setTimeout(resolve, 2000);
+    video.currentTime = 1e101;
+  });
+
+  // Reset to start for normal playback
+  await new Promise<void>((resolve) => {
+    const onSeeked = () => {
+      video.removeEventListener("seeked", onSeeked);
+      resolve();
+    };
+    video.addEventListener("seeked", onSeeked);
+    setTimeout(resolve, 1000);
+    video.currentTime = 0;
+  });
+}
+
 // ─── Core API ─────────────────────────────────────────────────────────────────
 
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 45_000;
 
 export async function applyWatermark(
   sourceBlob: Blob,
-  options:    WatermarkOptions = {},
+  options: WatermarkOptions = {},
 ): Promise<WatermarkResult> {
   const {
-    uniqueId:   providedId,
-    logoText  = "BIO-IP PLAY",
-    date      = new Date(),
-    opacity   = 0.85,
-    fps       = 30,
+    uniqueId:  providedId,
+    logoText = "BIO-IP PLAY",
+    date     = new Date(),
+    opacity  = 0.85,
+    fps      = 30,
     onProgress,
   } = options;
 
@@ -151,45 +170,50 @@ export async function applyWatermark(
   const dateStr  = date.toLocaleDateString("ko-KR", {
     year: "numeric", month: "2-digit", day: "2-digit",
   });
-
-  const mimeType = pickMimeType();
+  const mimeType  = pickMimeType();
   const wallStart = Date.now();
 
-  // ── 1. Hidden video element ───────────────────────────────────────────────────
+  // ── 1. Hidden <video> ─────────────────────────────────────────────────────────
   const video = document.createElement("video");
+  video.muted       = true;  // required: unmuted programmatic play() is blocked
   video.playsInline = true;
-  // FIX: must be muted — browsers block programmatic play() on unmuted elements
-  // without a user gesture. Muting lets autoplay succeed.
-  video.muted = true;
-  video.src   = URL.createObjectURL(sourceBlob);
 
+  const objectUrl = URL.createObjectURL(sourceBlob);
+  video.src = objectUrl;
+
+  // Wait for metadata (dimensions + initial duration)
   await new Promise<void>((resolve) => {
     video.onloadedmetadata = () => resolve();
     video.onerror = (e) => {
       console.error("[watermark] loadedmetadata error:", e);
-      resolve(); // continue anyway with defaults
+      resolve(); // continue with defaults
     };
-    setTimeout(resolve, 3000); // safety: iOS can be slow
+    setTimeout(resolve, 4000);
   });
 
-  const cw = video.videoWidth  || 1280;
-  const ch = video.videoHeight || 720;
+  // ── 2. Fix WebM Infinity duration ─────────────────────────────────────────────
+  try {
+    await fixWebMDuration(video);
+  } catch (e) {
+    console.warn("[watermark] fixWebMDuration failed:", e);
+  }
 
-  // FIX: MediaRecorder webm files have duration = Infinity — guard against it.
-  const videoDuration = isFinite(video.duration) && video.duration > 0
+  const cw       = video.videoWidth  || 1280;
+  const ch       = video.videoHeight || 720;
+  const duration = isFinite(video.duration) && video.duration > 0
     ? video.duration
     : 0;
 
-  // ── 2. Canvas ─────────────────────────────────────────────────────────────────
+  console.log(`[watermark] ${cw}×${ch}, duration=${duration.toFixed(2)}s`);
+
+  // ── 3. Canvas ─────────────────────────────────────────────────────────────────
   const canvas  = document.createElement("canvas");
   canvas.width  = cw;
   canvas.height = ch;
   const ctx     = canvas.getContext("2d")!;
 
-  // ── 3. Streams ────────────────────────────────────────────────────────────────
+  // ── 4. MediaRecorder on canvas stream ────────────────────────────────────────
   const canvasStream = canvas.captureStream(fps);
-
-  // ── 4. MediaRecorder ──────────────────────────────────────────────────────────
   const chunks: Blob[] = [];
   const recorder = new MediaRecorder(
     canvasStream,
@@ -197,19 +221,20 @@ export async function applyWatermark(
   );
   recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
-  // ── 5. Main promise with timeout ──────────────────────────────────────────────
+  // ── 5. Main promise ───────────────────────────────────────────────────────────
   return new Promise<WatermarkResult>((resolve, reject) => {
     let settled = false;
 
     const cleanup = () => {
       clearTimeout(timeoutId);
-      URL.revokeObjectURL(video.src);
+      URL.revokeObjectURL(objectUrl);
     };
 
     const fail = (err: Error) => {
       if (settled) return;
       settled = true;
       console.error("[watermark] failed:", err.message);
+      try { recorder.stop(); } catch {}
       cleanup();
       reject(err);
     };
@@ -218,14 +243,18 @@ export async function applyWatermark(
       if (settled) return;
       settled = true;
       cleanup();
-      resolve({ blob, uniqueId, mimeType: mimeType || "video/webm", durationMs: Date.now() - wallStart });
+      resolve({
+        blob,
+        uniqueId,
+        mimeType: mimeType || "video/webm",
+        durationMs: Date.now() - wallStart,
+      });
     };
 
-    // Hard timeout — user gets an error instead of infinite spinner
+    // Hard timeout
     const timeoutId = setTimeout(() => {
-      console.error("[watermark] Timeout after 30s");
-      try { recorder.stop(); } catch {}
-      fail(new Error("워터마크 처리 시간 초과 (30초). 짧은 영상으로 다시 시도해주세요."));
+      console.error("[watermark] 45s timeout");
+      fail(new Error("워터마크 처리 시간 초과 (45초). 짧은 영상으로 다시 시도해주세요."));
     }, TIMEOUT_MS);
 
     recorder.onstop = () => {
@@ -235,12 +264,13 @@ export async function applyWatermark(
 
     recorder.onerror = (e) => {
       console.error("[watermark] MediaRecorder error:", e);
-      fail(new Error("MediaRecorder 오류가 발생했습니다."));
+      fail(new Error("영상 인코딩 중 오류가 발생했습니다."));
     };
 
-    // ── 6. Frame drawing loop ─────────────────────────────────────────────────────
+    // ── 6. Frame draw loop ────────────────────────────────────────────────────────
     const drawFrame = () => {
-      if (settled || video.paused || video.ended) return;
+      if (settled) return;
+      if (video.paused || video.ended) return;
 
       try {
         ctx.drawImage(video, 0, 0, cw, ch);
@@ -249,32 +279,35 @@ export async function applyWatermark(
         console.error("[watermark] drawFrame error:", e);
       }
 
-      // Progress reporting
-      if (videoDuration > 0) {
-        // Known duration: report exact ratio
-        onProgress?.(Math.min(video.currentTime / videoDuration, 0.99));
+      // Progress: currentTime / duration (reliable after fixWebMDuration)
+      if (duration > 0) {
+        onProgress?.(Math.min(video.currentTime / duration, 0.99));
       } else {
-        // Unknown duration (webm): estimate from wall-clock elapsed
-        // Assume encoding takes ~1.5× real-time playback speed, cap at 95%
-        const elapsedSec = (Date.now() - wallStart) / 1000;
-        const estimatedTotal = Math.max(video.currentTime * 1.5 + 2, 5);
-        onProgress?.(Math.min(elapsedSec / estimatedTotal, 0.95));
+        // Fallback: estimate from wall-clock time
+        const elapsed = (Date.now() - wallStart) / 1000;
+        onProgress?.(Math.min(elapsed / Math.max(elapsed + 2, 5), 0.95));
       }
 
       requestAnimationFrame(drawFrame);
     };
 
-    video.onplay  = () => { drawFrame(); };
+    video.onplay = () => {
+      console.log("[watermark] playback started");
+      drawFrame();
+    };
+
     video.onended = () => {
+      console.log("[watermark] playback ended, stopping recorder");
       try {
         ctx.drawImage(video, 0, 0, cw, ch);
         drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
       } catch {}
       onProgress?.(1);
-      recorder.stop();
+      try { recorder.stop(); } catch {}
     };
+
     video.onerror = (e) => {
-      console.error("[watermark] video error during playback:", e);
+      console.error("[watermark] video playback error:", e);
       fail(new Error("영상 재생 중 오류가 발생했습니다."));
     };
 

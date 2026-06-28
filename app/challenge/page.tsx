@@ -126,12 +126,22 @@ export default function ChallengePage() {
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const dist = Math.hypot(dx, dy);
     const scale = dist / pinchStartRef.current;
-    setZoom((prev) => Math.max(1, Math.min(3, prev * scale)));
+    setZoom((prev) => Math.max(0.5, Math.min(3, prev * scale)));
     pinchStartRef.current = dist;
   }, []);
 
   const handleTouchEnd = useCallback(() => {
     pinchStartRef.current = 0;
+  }, []);
+
+  // ── Combined touch end: pinch reset + double-tap to reset zoom ───────────────
+  const lastTapRef = useRef(0);
+  const handleDoubleTap = useCallback((e: React.TouchEvent) => {
+    pinchStartRef.current = 0;
+    if (e.changedTouches.length !== 1) return;
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) setZoom(1);
+    lastTapRef.current = now;
   }, []);
 
   // ── File upload ───────────────────────────────────────────────────────────────
@@ -371,7 +381,7 @@ export default function ChallengePage() {
       className="fixed inset-0 z-40 overflow-hidden bg-black"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onTouchEnd={handleDoubleTap}
     >
       {/* ── Hidden file input ─────────────────────────────────────────────── */}
       <input
@@ -581,7 +591,7 @@ export default function ChallengePage() {
       ════════════════════════════════════════════════════════════════════ */}
       {captureState === "ready" && (
         <div className="absolute right-4 top-1/2 z-20 -translate-y-1/2 flex flex-col gap-2">
-          {([1, 1.5, 2, 3] as const).map((z) => (
+          {([0.5, 1, 1.5, 2, 3] as const).map((z) => (
             <button
               key={z}
               onClick={() => setZoom(z)}
