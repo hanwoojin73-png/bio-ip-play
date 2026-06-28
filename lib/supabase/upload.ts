@@ -160,3 +160,16 @@ export async function getOrCreateUserId(): Promise<string> {
   }
   return id;
 }
+
+export async function deleteBioIPAsset(assetId: string, videoUrl?: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (videoUrl) {
+    try {
+      const url = new URL(videoUrl);
+      const parts = url.pathname.split("/bio-ip-videos/");
+      if (parts.length === 2) await supabase.storage.from("bio-ip-videos").remove([parts[1]]);
+    } catch {}
+  }
+  const { error } = await supabase.from("bio_ip_assets").delete().eq("id", assetId);
+  if (error) throw new Error(error.message);
+}

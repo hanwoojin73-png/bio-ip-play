@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   getBioIPAssets,
+  deleteBioIPAsset,
   getOrCreateUserId,
   type BioIPAssetRecord,
 } from "@/lib/supabase/upload";
@@ -37,7 +38,14 @@ function Spinner() {
 
 // ─── Asset card ───────────────────────────────────────────────────────────────
 
-function AssetCard({ asset }: { asset: BioIPAssetRecord }) {
+function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () => void }) {
+  const [deleting, setDeleting] = React.useState(false);
+  const handleDelete = async () => {
+    if (!confirm("이 Bio-IP 자산을 삭제하시겠습니까?")) return;
+    setDeleting(true);
+    try { await deleteBioIPAsset(asset.id, asset.video_url ?? undefined); onDelete(); }
+    catch (e) { alert("삭제 실패: " + String(e)); setDeleting(false); }
+  };
   const statusStyle = STATUS_STYLES[asset.status] ?? STATUS_STYLES["draft"];
   const faceLandmarkCount = asset.face_landmarks?.length ?? 0;
   const poseLandmarkCount = asset.pose_landmarks?.length ?? 0;
@@ -121,6 +129,9 @@ function AssetCard({ asset }: { asset: BioIPAssetRecord }) {
           )}
           <button className="rounded-md bg-violet-700/40 px-2.5 py-1.5 text-violet-300 transition hover:bg-violet-700 hover:text-white">
             라이선스
+          </button>
+          <button onClick={handleDelete} disabled={deleting} className="rounded-md bg-red-900/40 px-2.5 py-1.5 text-red-400 transition hover:bg-red-700 hover:text-white disabled:opacity-40">
+            {deleting ? "삭제 중…" : "삭제"}
           </button>
         </div>
       </div>
@@ -283,7 +294,7 @@ export default function MyBioIPPage() {
           {loading && [1, 2, 3].map((i) => <SkeletonCard key={i} />)}
           {!loading && assets.length === 0 && !error && <EmptyState />}
           {!loading && assets.map((asset) => (
-            <AssetCard key={asset.id} asset={asset} />
+            <AssetCard key={asset.id} asset={asset} onDelete={() => setAssets((prev) => prev.filter((a) => a.id !== asset.id))} />
           ))}
         </div>
       </div>
