@@ -166,7 +166,7 @@ export async function applyWatermark(
   video.src         = objectUrl;
 
   await new Promise<void>((resolve) => {
-    video.onloadeddata = () => resolve();
+    video.onloadedmetadata = () => resolve();
     video.onerror = (e) => { console.error("[watermark] load error:", e); resolve(); };
     setTimeout(resolve, 5000);
   });
