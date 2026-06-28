@@ -1,5 +1,5 @@
 // ABI for BioIPRegistry — ERC-721 based NFT contract with licensing and royalty logic.
-// Deploy this contract on Polygon Mumbai (or Amoy) before calling contract.ts functions.
+// Deploy this contract on Polygon Amoy (chainId 80002) before calling contract.ts functions.
 
 export const BIO_IP_REGISTRY_ABI = [
   // ─── ERC-721 standard ────────────────────────────────────────────────────────

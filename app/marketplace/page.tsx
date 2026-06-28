@@ -6,6 +6,7 @@ import { parseEther } from "viem";
 import type { LicenseScope } from "@/types/bio-ip";
 import { usePurchase, type PurchaseStatus } from "@/hooks/usePurchase";
 import { shortAddress, amoyTxUrl } from "@/lib/blockchain/wallet";
+import ShareButton from "@/components/ShareButton";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -291,6 +292,14 @@ function DetailModal({ asset, onClose, onPurchase }: { asset: MarketplaceAsset; 
                 <span key={u} className="rounded-md bg-red-950/60 px-2 py-0.5 text-xs text-red-400 line-through">{u}</span>
               ))}
             </div>
+          </div>
+
+          {/* Share */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-600">공유</p>
+            <ShareButton
+              text={`${asset.title} Bio-IP 라이선스를 확인해보세요! #BioIP #블록체인`}
+            />
           </div>
 
           {/* Purchase CTA */}

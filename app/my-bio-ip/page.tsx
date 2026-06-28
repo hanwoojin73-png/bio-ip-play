@@ -7,6 +7,7 @@ import {
   getOrCreateUserId,
   type BioIPAssetRecord,
 } from "@/lib/supabase/upload";
+import ShareButton from "@/components/ShareButton";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,13 @@ function AssetCard({ asset }: { asset: BioIPAssetRecord }) {
             라이선스
           </button>
         </div>
+      </div>
+
+      {/* Share */}
+      <div className="border-t border-zinc-800 pt-3">
+        <ShareButton
+          text={`내 Bio-IP "${asset.title}"를 등록했어요! #BioIP #블록체인`}
+        />
       </div>
     </article>
   );

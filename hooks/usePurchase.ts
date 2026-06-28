@@ -3,7 +3,12 @@
 /**
  * usePurchase — wagmi v3 hook for purchasing a Bio-IP license on Polygon Amoy.
  *
- * Flow:
+ * Mock mode: set NEXT_PUBLIC_MOCK_BLOCKCHAIN=true to bypass the actual blockchain
+ * transaction. A fake tx hash is generated, a 2-second delay simulates mining, and
+ * the Supabase licenses insert still runs. Flip the env var to false to switch to
+ * the real on-chain flow without changing any other code.
+ *
+ * Real flow:
  *  1. switchChain  → ensure wallet is on Polygon Amoy (chainId 80002)
  *  2. writeContract → call transferLicense(assetId, buyer, scope, expiresAt) payable
  *  3. waitForTransactionReceipt → poll until tx is mined (1 confirmation)
@@ -36,6 +41,17 @@ import {
 import { BIO_IP_REGISTRY_ABI } from "@/lib/blockchain/abi";
 import { CONTRACT_ADDRESS, AMOY } from "@/lib/blockchain/wallet";
 import { getSupabaseClient } from "@/lib/supabase";
+
+// ─── Mock mode ────────────────────────────────────────────────────────────────
+
+const IS_MOCK = process.env.NEXT_PUBLIC_MOCK_BLOCKCHAIN === "true";
+const MOCK_BUYER = "0x0000000000000000000000000000000000000000" as const;
+
+function generateMockTxHash(): `0x${string}` {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return ("0x" + Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,25 +86,28 @@ export interface PurchaseParams {
 
 export function usePurchase() {
   const { address, chainId } = useAccount();
-  const { switchChainAsync }  = useSwitchChain();
+  const { switchChainAsync }   = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
-  const [status,  setStatus]  = useState<PurchaseStatus>("idle");
-  const [error,   setError]   = useState<string | null>(null);
-  const [txHash,  setTxHash]  = useState<`0x${string}` | undefined>(undefined);
+  const [status,       setStatus]       = useState<PurchaseStatus>("idle");
+  const [error,        setError]        = useState<string | null>(null);
+  const [txHash,       setTxHash]       = useState<`0x${string}` | undefined>(undefined);
+  // chainTxHash is only set for real on-chain txs — keeps useWaitForTransactionReceipt
+  // from trying to look up a fake hash on Amoy.
+  const [chainTxHash,  setChainTxHash]  = useState<`0x${string}` | undefined>(undefined);
 
   // Prevents double Supabase insert in React StrictMode
   const savedRef         = useRef(false);
   const pendingBioIpRef  = useRef<string | null>(null);
   const pendingAddrRef   = useRef<string | null>(null);
 
-  // ── Wait for on-chain confirmation ─────────────────────────────────────────
+  // ── Wait for on-chain confirmation (real mode only) ────────────────────────
   const { data: receipt, isSuccess: receiptSuccess, isError: receiptError } =
-    useWaitForTransactionReceipt({ hash: txHash, chainId: AMOY.id });
+    useWaitForTransactionReceipt({ hash: chainTxHash, chainId: AMOY.id });
 
-  // ── Supabase save when receipt lands ──────────────────────────────────────
+  // ── Supabase save when real receipt lands ─────────────────────────────────
   useEffect(() => {
-    if (!receiptSuccess || !receipt || savedRef.current) return;
+    if (!receiptSuccess || !receipt || !chainTxHash || savedRef.current) return;
     const bioIpId = pendingBioIpRef.current;
     const addr    = pendingAddrRef.current;
     if (!bioIpId || !addr) return;
@@ -97,7 +116,6 @@ export function usePurchase() {
     setStatus("saving");
 
     const supabase = getSupabaseClient();
-    // `as any` — Database generic resolves insert type to never for new tables
     (supabase.from("licenses") as any)
       .insert({
         bio_ip_id:     bioIpId,
@@ -107,14 +125,13 @@ export function usePurchase() {
       })
       .then(({ error: dbErr }: { error: { message: string } | null }) => {
         if (dbErr) {
-          // DB save failed, but tx succeeded on-chain — log and continue
           console.warn("[usePurchase] Supabase insert failed:", dbErr.message);
         }
         setStatus("success");
       });
-  }, [receiptSuccess, receipt]);
+  }, [receiptSuccess, receipt, chainTxHash]);
 
-  // ── Handle receipt error ──────────────────────────────────────────────────
+  // ── Handle real-tx receipt error ──────────────────────────────────────────
   useEffect(() => {
     if (receiptError && status === "pending") {
       setError("트랜잭션 확인에 실패했습니다. Amoy explorer에서 직접 확인해주세요.");
@@ -131,31 +148,59 @@ export function usePurchase() {
       scope     = 1,
       expiresAt = 0n,
     }: PurchaseParams) => {
-      if (!address) {
-        setError("지갑을 먼저 연결해주세요.");
-        setStatus("error");
-        return;
-      }
-      if (!CONTRACT_ADDRESS) {
-        setError("컨트랙트 주소가 설정되지 않았습니다. (NEXT_PUBLIC_BIO_IP_CONTRACT_ADDRESS)");
-        setStatus("error");
-        return;
-      }
-
       setError(null);
       setStatus("idle");
       savedRef.current        = false;
       pendingBioIpRef.current = bioIpId;
-      pendingAddrRef.current  = address;
+      pendingAddrRef.current  = address ?? MOCK_BUYER;
 
       try {
-        // 1. Ensure Polygon Amoy network
+        // ── Mock mode ────────────────────────────────────────────────────────
+        if (IS_MOCK) {
+          setStatus("signing");
+          await new Promise((r) => setTimeout(r, 800)); // simulate wallet popup
+
+          const mockHash = generateMockTxHash();
+          setTxHash(mockHash);
+          setStatus("pending");
+          await new Promise((r) => setTimeout(r, 2000)); // simulate block mining
+
+          setStatus("saving");
+          const supabase = getSupabaseClient();
+          const buyerAddr = address ?? MOCK_BUYER;
+          savedRef.current = true;
+
+          const { error: dbErr } = await (supabase.from("licenses") as any).insert({
+            bio_ip_id:     bioIpId,
+            buyer_address: buyerAddr,
+            tx_hash:       mockHash,
+            purchased_at:  new Date().toISOString(),
+          }) as { error: { message: string } | null };
+
+          if (dbErr) {
+            console.warn("[usePurchase] Mock Supabase insert failed:", dbErr.message);
+          }
+          setStatus("success");
+          return;
+        }
+
+        // ── Real mode ────────────────────────────────────────────────────────
+        if (!address) {
+          setError("지갑을 먼저 연결해주세요.");
+          setStatus("error");
+          return;
+        }
+        if (!CONTRACT_ADDRESS) {
+          setError("컨트랙트 주소가 설정되지 않았습니다. (NEXT_PUBLIC_BIO_IP_CONTRACT_ADDRESS)");
+          setStatus("error");
+          return;
+        }
+
         if (chainId !== AMOY.id) {
           setStatus("switching-network");
           await switchChainAsync({ chainId: AMOY.id });
         }
 
-        // 2. Send the transaction — waits for wallet signature
         setStatus("signing");
         const hash = await writeContractAsync({
           address:      CONTRACT_ADDRESS,
@@ -167,8 +212,9 @@ export function usePurchase() {
         });
 
         setTxHash(hash);
+        setChainTxHash(hash); // triggers useWaitForTransactionReceipt
         setStatus("pending");
-        // receipt flow continues in the useEffect above
+        // Supabase save continues in the useEffect above
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
 
@@ -179,7 +225,6 @@ export function usePurchase() {
         } else if (/contract address/i.test(msg)) {
           setError(msg);
         } else {
-          // Truncate long viem error messages
           setError(msg.slice(0, 120));
         }
         setStatus("error");
@@ -193,6 +238,7 @@ export function usePurchase() {
     setStatus("idle");
     setError(null);
     setTxHash(undefined);
+    setChainTxHash(undefined);
     savedRef.current        = false;
     pendingBioIpRef.current = null;
     pendingAddrRef.current  = null;
@@ -206,5 +252,6 @@ export function usePurchase() {
     txHash,
     address,
     isConnected: !!address,
+    isMock: IS_MOCK,
   };
 }

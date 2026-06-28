@@ -1,11 +1,5 @@
 /**
- * BioIPRegistry contract client — Polygon Mumbai (chain 80001).
- *
- * Note: Polygon deprecated Mumbai in April 2024 in favour of Amoy (chain 80002).
- * To switch, update MUMBAI_CHAIN_ID and RPC_URL to:
- *   AMOY_CHAIN_ID = 80002
- *   RPC_URL       = "https://rpc-amoy.polygon.technology"
- *   EXPLORER_URL  = "https://amoy.polygonscan.com"
+ * BioIPRegistry contract client — Polygon Amoy (chain 80002).
  */
 
 import {
@@ -29,11 +23,11 @@ import { BIO_IP_REGISTRY_ABI, LicenseScopeEnum } from "./abi";
 // ─── Network config ───────────────────────────────────────────────────────────
 
 export const NETWORK = {
-  chainId:     80001,
-  chainIdHex:  "0x13881",
-  name:        "Polygon Mumbai",
-  rpcUrl:      process.env.NEXT_PUBLIC_MUMBAI_RPC_URL ?? "https://rpc-mumbai.maticvigil.com",
-  explorerUrl: "https://mumbai.polygonscan.com",
+  chainId:     80002,
+  chainIdHex:  "0x13882",
+  name:        "Polygon Amoy",
+  rpcUrl:      process.env.NEXT_PUBLIC_AMOY_RPC_URL ?? "https://rpc-amoy.polygon.technology",
+  explorerUrl: "https://amoy.polygonscan.com",
   currency:    { name: "MATIC", symbol: "MATIC", decimals: 18 },
 } as const;
 
@@ -98,7 +92,7 @@ export class ContractError extends Error {
 
 // ─── Provider helpers ─────────────────────────────────────────────────────────
 
-/** Read-only provider backed by the public Mumbai RPC. */
+/** Read-only provider backed by the public Amoy RPC. */
 export function getReadProvider(): JsonRpcProvider {
   return new JsonRpcProvider(NETWORK.rpcUrl, NETWORK.chainId);
 }
@@ -113,8 +107,8 @@ export async function getSigner(): Promise<Signer> {
   return provider.getSigner();
 }
 
-/** Asserts the user's wallet is connected to Mumbai and switches if possible. */
-export async function ensureMumbaiNetwork(): Promise<void> {
+/** Asserts the user's wallet is connected to Amoy and switches if possible. */
+export async function ensureAmoyNetwork(): Promise<void> {
   if (typeof window === "undefined" || !("ethereum" in window)) return;
 
   const provider = new BrowserProvider(window.ethereum as Eip1193Provider);
@@ -264,7 +258,7 @@ function mapContractError(err: unknown): never {
  * Mints a new Bio-IP NFT.
  *
  * Hashes the BioSignature client-side, then calls `mintBioIP` on-chain.
- * The caller must be connected to Polygon Mumbai with enough MATIC for gas.
+ * The caller must be connected to Polygon Amoy with enough MATIC for gas.
  *
  * @param signature  - Extracted BioSignature (from lib/bio-extractor + lib/signature)
  * @param metadataUri - IPFS or Arweave URI pointing to the asset JSON
@@ -275,7 +269,7 @@ export async function mintBioIP(
   metadataUri: string,
   royaltyBps:  number,
 ): Promise<MintResult> {
-  await ensureMumbaiNetwork();
+  await ensureAmoyNetwork();
   const signer   = await getSigner();
   const contract = getWriteContract(signer);
 
@@ -318,7 +312,7 @@ export async function transferLicense(
   scope:      LicenseScope,
   expiresAt?: Date,
 ): Promise<TransferResult> {
-  await ensureMumbaiNetwork();
+  await ensureAmoyNetwork();
   const signer   = await getSigner();
   const contract = getWriteContract(signer);
 
@@ -360,7 +354,7 @@ export async function transferLicense(
  * @param assetId - Token ID of the Bio-IP NFT
  */
 export async function claimRoyalty(assetId: string): Promise<ClaimResult> {
-  await ensureMumbaiNetwork();
+  await ensureAmoyNetwork();
   const signer   = await getSigner();
   const contract = getWriteContract(signer);
 

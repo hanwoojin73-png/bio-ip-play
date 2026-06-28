@@ -7,7 +7,7 @@ export {
   isLicenseValid,
   isContractPaused,
   hashBioSignature,
-  ensureMumbaiNetwork,
+  ensureAmoyNetwork,
   getSigner,
   getReadProvider,
   txUrl,
