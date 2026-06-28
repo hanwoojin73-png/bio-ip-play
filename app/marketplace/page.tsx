@@ -445,7 +445,7 @@ function PurchaseFlowModal({
 }) {
   const { address, isConnected }              = useAccount();
   const { connect, connectors, isPending: connectPending } = useConnect();
-  const { purchaseLicense, reset, status, error, txHash } = usePurchase();
+  const { purchaseLicense, reset, status, error, txHash, isMock } = usePurchase();
   const backdropRef = useRef<HTMLDivElement>(null);
 
   const price    = bpsToPrice(asset.royaltyRateBps);
@@ -500,8 +500,8 @@ function PurchaseFlowModal({
             </div>
           </div>
 
-          {/* ── Not connected ── */}
-          {!isConnected && status !== "success" && (
+          {/* ── Not connected (real mode only) ── */}
+          {!isConnected && !isMock && status !== "success" && (
             <div className="space-y-3">
               <p className="text-center text-sm text-zinc-400">
                 구매하려면 Web3 지갑을 연결하세요
@@ -534,16 +534,23 @@ function PurchaseFlowModal({
             </div>
           )}
 
-          {/* ── Connected, idle or error ── */}
-          {isConnected && (status === "idle" || status === "error") && (
+          {/* ── Idle or error (mock: no wallet required / real: wallet required) ── */}
+          {(isConnected || isMock) && (status === "idle" || status === "error") && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs">
-                <span className="text-zinc-500">구매 지갑</span>
-                <span className="font-mono text-zinc-300">{address ? shortAddress(address) : ""}</span>
-              </div>
+              {isMock ? (
+                <div className="flex items-center justify-between rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs">
+                  <span className="text-amber-400 font-semibold">Mock 모드</span>
+                  <span className="text-amber-300/70">실제 트랜잭션 없음</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs">
+                  <span className="text-zinc-500">구매 지갑</span>
+                  <span className="font-mono text-zinc-300">{address ? shortAddress(address) : ""}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs">
                 <span className="text-zinc-500">네트워크</span>
-                <span className="text-violet-300">Polygon Amoy</span>
+                <span className="text-violet-300">Polygon Amoy{isMock ? " (mock)" : ""}</span>
               </div>
 
               {error && (
