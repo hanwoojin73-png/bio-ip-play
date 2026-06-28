@@ -1,13 +1,16 @@
 /**
- * Canvas-only video watermarking — no ffmpeg, no external deps.
+ * Canvas-only watermarking — generates a watermarked JPEG thumbnail
+ * from the last frame of a recorded video blob. No ffmpeg, no MediaRecorder.
  *
  * Flow:
- *  1. Load source Blob into a hidden <video> (muted for autoplay policy).
- *  2. Fix WebM Infinity duration: seek to 1e101 so the browser clamps to real end.
- *  3. Drive a <canvas> per-frame via requestAnimationFrame.
- *  4. Draw original frame + watermark text overlay on canvas each frame.
- *  5. Re-encode via MediaRecorder on canvas.captureStream() → new Blob.
- *  6. Progress = video.currentTime / video.duration (now finite after step 2).
+ *  1. Load source Blob into a hidden <video>.
+ *  2. Fix WebM Infinity duration via 1e101 seek trick.
+ *  3. Seek to the last frame.
+ *  4. Draw that frame + text watermark overlay onto a <canvas>.
+ *  5. Export the canvas as a JPEG blob.
+ *
+ * The original video is preserved unchanged. Only the thumbnail carries
+ * the visible watermark.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -16,19 +19,18 @@ export interface WatermarkOptions {
   uniqueId?:   string;
   logoText?:   string;
   date?:       Date;
-  opacity?:    number;     // 0–1, default 0.85
-  fps?:        number;     // canvas captureStream fps, default 30
-  onProgress?: (ratio: number) => void;  // 0 → 1
+  opacity?:    number;                        // 0–1, default 0.85
+  onProgress?: (ratio: number) => void;       // 0 → 1
 }
 
 export interface WatermarkResult {
-  blob:       Blob;
+  blob:       Blob;          // JPEG thumbnail with watermark overlay
   uniqueId:   string;
-  mimeType:   string;
+  mimeType:   "image/jpeg";
   durationMs: number;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── ID generation ────────────────────────────────────────────────────────────
 
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -39,6 +41,8 @@ export function generateWatermarkId(): string {
   }
   return id;
 }
+
+// ─── Canvas drawing helpers ───────────────────────────────────────────────────
 
 function fillRoundRect(
   ctx: CanvasRenderingContext2D,
@@ -76,10 +80,10 @@ function drawWatermark(
   const innerPadY = Math.round(8  * scale);
 
   ctx.font = `700 ${logoSize}px -apple-system, system-ui, Arial, sans-serif`;
-  const logoW   = ctx.measureText(logoText).width;
+  const logoW    = ctx.measureText(logoText).width;
   ctx.font = `${metaSize}px monospace`;
-  const idW     = ctx.measureText(uniqueId).width;
-  const dateW   = ctx.measureText(dateStr).width;
+  const idW      = ctx.measureText(uniqueId).width;
+  const dateW    = ctx.measureText(dateStr).width;
   const maxTextW = Math.max(logoW, idW, dateW);
 
   const bgW = maxTextW + innerPadX * 2;
@@ -88,8 +92,9 @@ function drawWatermark(
   const bgY = ch - bgH - pad;
 
   ctx.save();
-  ctx.globalAlpha  = opacity * 0.72;
-  ctx.fillStyle    = "rgba(0,0,0,0.65)";
+
+  ctx.globalAlpha = opacity * 0.72;
+  ctx.fillStyle   = "rgba(0,0,0,0.65)";
   fillRoundRect(ctx, bgX, bgY, bgW, bgH, 6);
 
   ctx.globalAlpha  = opacity;
@@ -109,60 +114,39 @@ function drawWatermark(
   ctx.restore();
 }
 
-function pickMimeType(): string {
-  const candidates = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm",
-    "video/mp4",
-  ];
-  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
-}
-
 // ─── WebM duration fix ────────────────────────────────────────────────────────
-// MediaRecorder WebM files have duration = Infinity.
-// Seeking to a huge timestamp forces the browser to clamp to the real end,
-// making video.duration finite on the subsequent 'seeked' event.
+// WebM files recorded by MediaRecorder have duration = Infinity.
+// Seeking past the end forces the browser to clamp to the real duration.
+
 async function fixWebMDuration(video: HTMLVideoElement): Promise<void> {
   if (isFinite(video.duration) && video.duration > 0) return;
 
   await new Promise<void>((resolve) => {
-    const onSeeked = () => {
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
-    };
-    video.addEventListener("seeked", onSeeked);
-    // Safety timeout in case 'seeked' never fires
-    setTimeout(resolve, 2000);
+    const done = () => { video.onseeked = null; resolve(); };
+    video.onseeked = done;
+    setTimeout(done, 2500);
     video.currentTime = 1e101;
   });
 
-  // Reset to start for normal playback
   await new Promise<void>((resolve) => {
-    const onSeeked = () => {
-      video.removeEventListener("seeked", onSeeked);
-      resolve();
-    };
-    video.addEventListener("seeked", onSeeked);
-    setTimeout(resolve, 1000);
+    const done = () => { video.onseeked = null; resolve(); };
+    video.onseeked = done;
+    setTimeout(done, 1000);
     video.currentTime = 0;
   });
 }
 
 // ─── Core API ─────────────────────────────────────────────────────────────────
 
-const TIMEOUT_MS = 45_000;
-
 export async function applyWatermark(
   sourceBlob: Blob,
-  options: WatermarkOptions = {},
+  options:    WatermarkOptions = {},
 ): Promise<WatermarkResult> {
   const {
     uniqueId:  providedId,
     logoText = "BIO-IP PLAY",
     date     = new Date(),
     opacity  = 0.85,
-    fps      = 30,
     onProgress,
   } = options;
 
@@ -170,152 +154,79 @@ export async function applyWatermark(
   const dateStr  = date.toLocaleDateString("ko-KR", {
     year: "numeric", month: "2-digit", day: "2-digit",
   });
-  const mimeType  = pickMimeType();
   const wallStart = Date.now();
 
-  // ── 1. Hidden <video> ─────────────────────────────────────────────────────────
+  onProgress?.(0.05);
+
+  // ── 1. Load video ────────────────────────────────────────────────────────────
   const video = document.createElement("video");
-  video.muted       = true;  // required: unmuted programmatic play() is blocked
+  video.muted       = true;
   video.playsInline = true;
+  const objectUrl   = URL.createObjectURL(sourceBlob);
+  video.src         = objectUrl;
 
-  const objectUrl = URL.createObjectURL(sourceBlob);
-  video.src = objectUrl;
-
-  // Wait for metadata (dimensions + initial duration)
   await new Promise<void>((resolve) => {
-    video.onloadedmetadata = () => resolve();
-    video.onerror = (e) => {
-      console.error("[watermark] loadedmetadata error:", e);
-      resolve(); // continue with defaults
-    };
-    setTimeout(resolve, 4000);
+    video.onloadeddata = () => resolve();
+    video.onerror = (e) => { console.error("[watermark] load error:", e); resolve(); };
+    setTimeout(resolve, 5000);
   });
 
-  // ── 2. Fix WebM Infinity duration ─────────────────────────────────────────────
-  try {
-    await fixWebMDuration(video);
-  } catch (e) {
-    console.warn("[watermark] fixWebMDuration failed:", e);
+  onProgress?.(0.25);
+
+  // ── 2. Fix WebM Infinity duration ────────────────────────────────────────────
+  try { await fixWebMDuration(video); } catch (e) {
+    console.warn("[watermark] fixWebMDuration:", e);
   }
 
-  const cw       = video.videoWidth  || 1280;
-  const ch       = video.videoHeight || 720;
-  const duration = isFinite(video.duration) && video.duration > 0
-    ? video.duration
-    : 0;
+  onProgress?.(0.55);
 
-  console.log(`[watermark] ${cw}×${ch}, duration=${duration.toFixed(2)}s`);
+  // ── 3. Seek to last frame ────────────────────────────────────────────────────
+  const dur = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+  if (dur > 0) {
+    await new Promise<void>((resolve) => {
+      const done = () => { video.onseeked = null; resolve(); };
+      video.onseeked = done;
+      setTimeout(done, 1500);
+      video.currentTime = Math.max(0, dur - 0.05);
+    });
+  }
 
-  // ── 3. Canvas ─────────────────────────────────────────────────────────────────
+  onProgress?.(0.75);
+
+  // ── 4. Draw frame + watermark to canvas ──────────────────────────────────────
+  const cw = video.videoWidth  || 1280;
+  const ch = video.videoHeight || 720;
   const canvas  = document.createElement("canvas");
   canvas.width  = cw;
   canvas.height = ch;
   const ctx     = canvas.getContext("2d")!;
 
-  // ── 4. MediaRecorder on canvas stream ────────────────────────────────────────
-  const canvasStream = canvas.captureStream(fps);
-  const chunks: Blob[] = [];
-  const recorder = new MediaRecorder(
-    canvasStream,
-    mimeType ? { mimeType } : undefined,
-  );
-  recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  ctx.drawImage(video, 0, 0, cw, ch);
+  drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
 
-  // ── 5. Main promise ───────────────────────────────────────────────────────────
-  return new Promise<WatermarkResult>((resolve, reject) => {
-    let settled = false;
+  URL.revokeObjectURL(objectUrl);
+  onProgress?.(0.9);
 
-    const cleanup = () => {
-      clearTimeout(timeoutId);
-      URL.revokeObjectURL(objectUrl);
-    };
-
-    const fail = (err: Error) => {
-      if (settled) return;
-      settled = true;
-      console.error("[watermark] failed:", err.message);
-      try { recorder.stop(); } catch {}
-      cleanup();
-      reject(err);
-    };
-
-    const succeed = (blob: Blob) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve({
-        blob,
-        uniqueId,
-        mimeType: mimeType || "video/webm",
-        durationMs: Date.now() - wallStart,
-      });
-    };
-
-    // Hard timeout
-    const timeoutId = setTimeout(() => {
-      console.error("[watermark] 45s timeout");
-      fail(new Error("워터마크 처리 시간 초과 (45초). 짧은 영상으로 다시 시도해주세요."));
-    }, TIMEOUT_MS);
-
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-      succeed(blob);
-    };
-
-    recorder.onerror = (e) => {
-      console.error("[watermark] MediaRecorder error:", e);
-      fail(new Error("영상 인코딩 중 오류가 발생했습니다."));
-    };
-
-    // ── 6. Frame draw loop ────────────────────────────────────────────────────────
-    const drawFrame = () => {
-      if (settled) return;
-      if (video.paused || video.ended) return;
-
-      try {
-        ctx.drawImage(video, 0, 0, cw, ch);
-        drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
-      } catch (e) {
-        console.error("[watermark] drawFrame error:", e);
-      }
-
-      // Progress: currentTime / duration (reliable after fixWebMDuration)
-      if (duration > 0) {
-        onProgress?.(Math.min(video.currentTime / duration, 0.99));
-      } else {
-        // Fallback: estimate from wall-clock time
-        const elapsed = (Date.now() - wallStart) / 1000;
-        onProgress?.(Math.min(elapsed / Math.max(elapsed + 2, 5), 0.95));
-      }
-
-      requestAnimationFrame(drawFrame);
-    };
-
-    video.onplay = () => {
-      console.log("[watermark] playback started");
-      drawFrame();
-    };
-
-    video.onended = () => {
-      console.log("[watermark] playback ended, stopping recorder");
-      try {
-        ctx.drawImage(video, 0, 0, cw, ch);
-        drawWatermark(ctx, cw, ch, uniqueId, dateStr, logoText, opacity);
-      } catch {}
-      onProgress?.(1);
-      try { recorder.stop(); } catch {}
-    };
-
-    video.onerror = (e) => {
-      console.error("[watermark] video playback error:", e);
-      fail(new Error("영상 재생 중 오류가 발생했습니다."));
-    };
-
-    recorder.start(200);
-
-    video.play().catch((err: Error) => {
-      console.error("[watermark] video.play() rejected:", err);
-      fail(new Error(`영상 재생 실패: ${err?.message ?? String(err)}`));
-    });
+  // ── 5. Export JPEG ───────────────────────────────────────────────────────────
+  const thumbnailBlob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("썸네일 JPEG 생성 실패"));
+      },
+      "image/jpeg",
+      0.92,
+    );
   });
+
+  onProgress?.(1);
+
+  console.log(`[watermark] thumbnail OK  ${(thumbnailBlob.size / 1024).toFixed(0)} kB  ${Date.now() - wallStart}ms`);
+
+  return {
+    blob:       thumbnailBlob,
+    uniqueId,
+    mimeType:   "image/jpeg",
+    durationMs: Date.now() - wallStart,
+  };
 }

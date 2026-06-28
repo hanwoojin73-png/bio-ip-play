@@ -49,6 +49,8 @@ export default function ChallengePage() {
   const [facingMode,        setFacingMode]        = useState<FacingMode>("user");
   const [orientation,       setOrientation]       = useState<Orientation>("portrait");
   const [zoom,              setZoom]              = useState(1);
+  // hwZoomRange: set when the camera track supports the zoom constraint natively
+  const [hwZoomRange,       setHwZoomRange]       = useState<{ min: number; max: number } | null>(null);
   const [elapsed,           setElapsed]           = useState(0);
   const [error,             setError]             = useState<string | null>(null);
   const [watermarkProgress, setWatermarkProgress] = useState(0);
@@ -93,11 +95,26 @@ export default function ChallengePage() {
       });
       streamRef.current = stream;
       if (liveVideoRef.current) liveVideoRef.current.srcObject = stream;
+      // Check hardware zoom support
+      const track = stream.getVideoTracks()[0];
+      const caps  = (track?.getCapabilities?.() ?? {}) as Record<string, unknown> & { zoom?: { min: number; max: number } };
+      setHwZoomRange(caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max } : null);
       setCaptureState("ready");
     } catch {
       setError("카메라 또는 마이크 접근 권한이 필요합니다.");
     }
   }, []);
+
+  // ── Hardware zoom via applyConstraints ────────────────────────────────────────
+  // Runs whenever zoom state changes; no-op if camera doesn't support hw zoom.
+  useEffect(() => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || !hwZoomRange) return;
+    const clamped = Math.min(hwZoomRange.max, Math.max(hwZoomRange.min, zoom));
+    (track as MediaStreamTrack & { applyConstraints: (c: object) => Promise<void> })
+      .applyConstraints({ advanced: [{ zoom: clamped }] })
+      .catch((e: unknown) => console.warn("[zoom] applyConstraints:", e));
+  }, [zoom, hwZoomRange]);
 
   // ── Flip camera ───────────────────────────────────────────────────────────────
   const flipCamera = useCallback(() => {
@@ -255,7 +272,8 @@ export default function ChallengePage() {
       .then((result) => {
         if (cancelled) return;
         setWatermarkResult(result);
-        const url = URL.createObjectURL(result.blob);
+        // Preview plays the original video; thumbnail (result.blob) is JPEG only
+        const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setCaptureState("preview");
       })
@@ -290,17 +308,20 @@ export default function ChallengePage() {
 
   // ── Download ───────────────────────────────────────────────────────────────────
   const downloadVideo = useCallback(() => {
-    if (!previewUrl) return;
-    const ext = watermarkResult?.mimeType.includes("mp4") ? "mp4" : "webm";
-    const a = document.createElement("a");
-    a.href     = previewUrl;
+    const videoBlob = rawBlobRef.current;
+    if (!videoBlob) return;
+    const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
+    const url = URL.createObjectURL(videoBlob);
+    const a   = document.createElement("a");
+    a.href     = url;
     a.download = `bio-ip-${watermarkResult?.uniqueId ?? "challenge"}.${ext}`;
     a.click();
-  }, [previewUrl, watermarkResult]);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [watermarkResult]);
 
   // ── SNS share ──────────────────────────────────────────────────────────────────
   const shareVideo = useCallback(async () => {
-    const blob = watermarkResult?.blob ?? rawBlobRef.current;
+    const blob = rawBlobRef.current;
     if (!blob) return;
     const ext  = blob.type.includes("mp4") ? "mp4" : "webm";
     const file = new File([blob], `bio-ip-challenge.${ext}`, { type: blob.type });
@@ -322,7 +343,7 @@ export default function ChallengePage() {
         catch {}
       }
       const userId = await getOrCreateUserId();
-      const blob   = watermarkResult?.blob ?? rawBlobRef.current;
+      const blob   = rawBlobRef.current; // always upload the original video, not the thumbnail
       if (!blob) throw new Error("녹화된 영상이 없습니다.");
       const videoUrl = await uploadVideo(blob, userId);
       const frames   = capturedFramesRef.current;
@@ -363,10 +384,15 @@ export default function ChallengePage() {
   const isWatermarking = captureState === "watermarking";
   const isPreview      = captureState === "preview";
 
-  // ── Live video CSS: zoom + mirror + orientation ───────────────────────────────
+  // ── Live video CSS: mirror + zoom (CSS scale only for zoom-in without hw zoom) ─
+  // Hardware zoom (applyConstraints) handles zoom when supported.
+  // CSS scale handles zoom > 1 on devices without hw zoom — parent overflow-hidden
+  // clips the upscaled video so the screen stays full.
+  // Zoom-out (0.5×) via CSS would show black borders; hw zoom handles it instead.
+  const applyCssScale = !hwZoomRange && zoom > 1;
   const videoTransform = [
     facingMode === "user" ? "scaleX(-1)" : "",
-    zoom !== 1 ? `scale(${zoom})` : "",
+    applyCssScale ? `scale(${zoom})` : "",
   ].filter(Boolean).join(" ") || "none";
 
   const videoClass = orientation === "landscape"
@@ -478,7 +504,7 @@ export default function ChallengePage() {
               />
             </div>
             <p className="text-center text-sm text-zinc-400">
-              워터마크 적용 중… {watermarkProgress}%
+              썸네일 생성 중… {watermarkProgress}%
             </p>
           </div>
         </div>
