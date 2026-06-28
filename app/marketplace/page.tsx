@@ -523,14 +523,6 @@ function PurchaseFlowModal({
                 )}
                 MetaMask로 연결
               </button>
-              {connectors[1] && (
-                <button
-                  onClick={() => connect({ connector: connectors[1] })}
-                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 text-sm text-zinc-300 transition hover:border-zinc-500"
-                >
-                  Coinbase Wallet
-                </button>
-              )}
             </div>
           )}
 

@@ -8,7 +8,7 @@
 
 import { createConfig, http } from "wagmi";
 import { polygonAmoy } from "viem/chains";
-import { injected, coinbaseWallet } from "wagmi/connectors";
+import { injected } from "wagmi/connectors";
 
 // ─── Chain ────────────────────────────────────────────────────────────────────
 
@@ -27,8 +27,7 @@ export const CONTRACT_ADDRESS =
 export const wagmiConfig = createConfig({
   chains: [polygonAmoy],
   connectors: [
-    injected(),                                    // MetaMask / browser wallet
-    coinbaseWallet({ appName: "BIO-IP Play" }),
+    injected(), // MetaMask / any injected browser wallet
   ],
   transports: {
     [polygonAmoy.id]: http(AMOY_RPC),
