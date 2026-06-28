@@ -171,10 +171,10 @@ export default function ChallengePage() {
     }
     rawBlobRef.current = file;
     setWatermarkError(null);
-    setWatermarkProgress(0);
-    setCaptureState("watermarking");
-    setPendingWatermark(true);
-    // Reset the input so the same file can be re-selected if needed
+    // Skip watermarking — go directly to preview with original file
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    setCaptureState("preview");
     e.target.value = "";
   }, []);
 
@@ -240,8 +240,6 @@ export default function ChallengePage() {
     if (timerRef.current)         clearInterval(timerRef.current);
     if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
     setWatermarkError(null);
-    setCaptureState("watermarking");
-    setWatermarkProgress(0);
     mediaRecorderRef.current?.stop();
     streamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
