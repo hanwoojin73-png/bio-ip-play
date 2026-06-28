@@ -109,7 +109,7 @@ export default function ChallengePage() {
   // Runs whenever zoom state changes; no-op if camera doesn't support hw zoom.
   useEffect(() => {
     const track = streamRef.current?.getVideoTracks()[0];
-    if (!track || !hwZoomRange) return;
+    if (!track || !hwZoomRange || zoom <= 1) return;
     const clamped = Math.min(hwZoomRange.max, Math.max(hwZoomRange.min, zoom));
     (track as MediaStreamTrack & { applyConstraints: (c: object) => Promise<void> })
       .applyConstraints({ advanced: [{ zoom: clamped }] })
@@ -385,14 +385,9 @@ export default function ChallengePage() {
   const isPreview      = captureState === "preview";
 
   // ── Live video CSS: mirror + zoom (CSS scale only for zoom-in without hw zoom) ─
-  // Hardware zoom (applyConstraints) handles zoom when supported.
-  // CSS scale handles zoom > 1 on devices without hw zoom — parent overflow-hidden
-  // clips the upscaled video so the screen stays full.
-  // Zoom-out (0.5×) via CSS would show black borders; hw zoom handles it instead.
-  const applyCssScale = !hwZoomRange && zoom > 1;
   const videoTransform = [
     facingMode === "user" ? "scaleX(-1)" : "",
-    applyCssScale ? `scale(${zoom})` : "",
+    zoom !== 1 ? `scale(${zoom})` : "",
   ].filter(Boolean).join(" ") || "none";
 
   const videoClass = orientation === "landscape"
