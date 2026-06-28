@@ -37,48 +37,106 @@ function IconArrowRight() {
   );
 }
 
-// ─── Feature cards data ────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
-const FEATURES = [
+interface Feature {
+  id:          string;
+  iconKey:     "bio" | "chain" | "contract";
+  title:       string;
+  badge:       string;
+  description: string;
+  accent:      string;
+  badgeClass:  string;
+  borderHover: string;
+}
+
+interface Stat {
+  value: string;
+  unit:  string;
+  label: string;
+}
+
+interface Step {
+  step:  string;
+  title: string;
+  desc:  string;
+  href:  string;
+  cta:   string;
+}
+
+// ─── Data (plain objects only — no JSX at module level) ────────────────────────
+
+const FEATURES: Feature[] = [
   {
-    icon: <IconBio />,
-    title: "생체 신호 추출",
-    badge: "3-Layer",
-    description:
-      "시각(얼굴 기하·표정), 음성(피치·음색·리듬), 다이내믹스(제스처·모션 템포)를 동시에 캡처해 고유한 바이오 시그니처를 생성합니다.",
-    accent: "from-violet-500 to-purple-600",
-    badgeClass: "bg-violet-900/60 text-violet-300",
+    id:          "bio",
+    iconKey:     "bio",
+    title:       "생체 신호 추출",
+    badge:       "3-Layer",
+    description: "시각(얼굴 기하·표정), 음성(피치·음색·리듬), 다이내믹스(제스처·모션 템포)를 동시에 캡처해 고유한 바이오 시그니처를 생성합니다.",
+    accent:      "from-violet-500 to-purple-600",
+    badgeClass:  "bg-violet-900/60 text-violet-300",
     borderHover: "hover:border-violet-700/60",
   },
   {
-    icon: <IconChain />,
-    title: "블록체인 자산화",
-    badge: "On-Chain",
-    description:
-      "생체 시그니처를 NFT로 발행해 온체인에 소유권을 등록합니다. IPFS 메타데이터로 변조 불가능한 원본 증명을 보장합니다.",
-    accent: "from-blue-500 to-cyan-600",
-    badgeClass: "bg-blue-900/60 text-blue-300",
+    id:          "chain",
+    iconKey:     "chain",
+    title:       "블록체인 자산화",
+    badge:       "On-Chain",
+    description: "생체 시그니처를 NFT로 발행해 온체인에 소유권을 등록합니다. IPFS 메타데이터로 변조 불가능한 원본 증명을 보장합니다.",
+    accent:      "from-blue-500 to-cyan-600",
+    badgeClass:  "bg-blue-900/60 text-blue-300",
     borderHover: "hover:border-blue-700/60",
   },
   {
-    icon: <IconContract />,
-    title: "스마트 계약 로열티",
-    badge: "Automated",
-    description:
-      "라이선스 조건·허용 사용처·지역·만료일을 스마트 계약에 인코딩. 사용이 발생하는 순간 로열티가 자동으로 정산됩니다.",
-    accent: "from-emerald-500 to-teal-600",
-    badgeClass: "bg-emerald-900/60 text-emerald-300",
+    id:          "contract",
+    iconKey:     "contract",
+    title:       "스마트 계약 로열티",
+    badge:       "Automated",
+    description: "라이선스 조건·허용 사용처·지역·만료일을 스마트 계약에 인코딩. 사용이 발생하는 순간 로열티가 자동으로 정산됩니다.",
+    accent:      "from-emerald-500 to-teal-600",
+    badgeClass:  "bg-emerald-900/60 text-emerald-300",
     borderHover: "hover:border-emerald-700/60",
   },
-] as const;
+];
 
-// ─── Stats ─────────────────────────────────────────────────────────────────────
-
-const STATS = [
+const STATS: Stat[] = [
   { value: "3",    unit: "레이어",  label: "생체 신호 추출" },
   { value: "100%", unit: "온체인",  label: "소유권 등록" },
   { value: "0",    unit: "중개자",  label: "직접 로열티 정산" },
 ];
+
+const STEPS: Step[] = [
+  {
+    step:  "01",
+    title: "바이오 캡처",
+    desc:  "웹캠과 마이크로 시각·음성·다이내믹스 레이어를 동시 녹화합니다.",
+    href:  "/challenge",
+    cta:   "캡처 시작",
+  },
+  {
+    step:  "02",
+    title: "자산 등록",
+    desc:  "바이오 시그니처를 검증하고 라이선스 조건을 설정한 뒤 NFT로 발행합니다.",
+    href:  "/my-bio-ip",
+    cta:   "자산 보기",
+  },
+  {
+    step:  "03",
+    title: "로열티 수령",
+    desc:  "라이선시가 자산을 사용할 때마다 스마트 계약이 자동으로 정산합니다.",
+    href:  "/dashboard",
+    cta:   "대시보드",
+  },
+];
+
+// ─── Icon resolver (keeps JSX inside the component render tree) ────────────────
+
+function FeatureIcon({ iconKey }: { iconKey: Feature["iconKey"] }) {
+  if (iconKey === "bio")      return <IconBio />;
+  if (iconKey === "chain")    return <IconChain />;
+  if (iconKey === "contract") return <IconContract />;
+  return null;
+}
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -102,9 +160,8 @@ export default function LandingPage() {
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.03]"
           style={{
-            backgroundImage:
-              "radial-gradient(circle, #fff 1px, transparent 1px)",
-            backgroundSize: "32px 32px",
+            backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1px)",
+            backgroundSize:  "32px 32px",
           }}
         />
 
@@ -150,13 +207,15 @@ export default function LandingPage() {
 
         {/* Stats row */}
         <div className="relative z-10 mt-16 flex flex-wrap items-center justify-center gap-10">
-          {STATS.map(({ value, unit, label }) => (
-            <div key={label} className="text-center">
+          {(STATS ?? []).map((stat) => (
+            <div key={stat?.label ?? ""} className="text-center">
               <p className="text-3xl font-extrabold text-white">
-                {value}
-                <span className="ml-1 text-lg font-semibold text-violet-400">{unit}</span>
+                {stat?.value ?? "—"}
+                <span className="ml-1 text-lg font-semibold text-violet-400">
+                  {stat?.unit ?? ""}
+                </span>
               </p>
-              <p className="mt-0.5 text-xs text-zinc-500">{label}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">{stat?.label ?? ""}</p>
             </div>
           ))}
         </div>
@@ -175,26 +234,30 @@ export default function LandingPage() {
           </div>
 
           <div className="grid gap-5 sm:grid-cols-3">
-            {FEATURES.map(({ icon, title, badge, description, accent, badgeClass, borderHover }) => (
+            {(FEATURES ?? []).map((feature) => (
               <div
-                key={title}
-                className={`group rounded-2xl border border-zinc-800 bg-zinc-900 p-6 transition ${borderHover}`}
+                key={feature?.id ?? ""}
+                className={`group rounded-2xl border border-zinc-800 bg-zinc-900 p-6 transition ${feature?.borderHover ?? ""}`}
               >
                 {/* Icon */}
-                <div className={`mb-4 inline-flex rounded-xl bg-gradient-to-br ${accent} p-2.5 text-white`}>
-                  {icon}
+                <div className={`mb-4 inline-flex rounded-xl bg-gradient-to-br ${feature?.accent ?? ""} p-2.5 text-white`}>
+                  {feature?.iconKey ? <FeatureIcon iconKey={feature.iconKey} /> : null}
                 </div>
 
                 {/* Title + badge */}
                 <div className="mb-2 flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-white">{title}</h3>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}>
-                    {badge}
+                  <h3 className="text-base font-semibold text-white">
+                    {feature?.title ?? ""}
+                  </h3>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${feature?.badgeClass ?? ""}`}>
+                    {feature?.badge ?? ""}
                   </span>
                 </div>
 
                 {/* Description */}
-                <p className="text-sm leading-relaxed text-zinc-400">{description}</p>
+                <p className="text-sm leading-relaxed text-zinc-400">
+                  {feature?.description ?? ""}
+                </p>
               </div>
             ))}
           </div>
@@ -212,50 +275,34 @@ export default function LandingPage() {
           </div>
 
           <ol className="relative space-y-0">
-            {[
-              {
-                step: "01",
-                title: "바이오 캡처",
-                desc: "웹캠과 마이크로 시각·음성·다이내믹스 레이어를 동시 녹화합니다.",
-                href: "/challenge",
-                cta: "캡처 시작",
-              },
-              {
-                step: "02",
-                title: "자산 등록",
-                desc: "바이오 시그니처를 검증하고 라이선스 조건을 설정한 뒤 NFT로 발행합니다.",
-                href: "/my-bio-ip",
-                cta: "자산 보기",
-              },
-              {
-                step: "03",
-                title: "로열티 수령",
-                desc: "라이선시가 자산을 사용할 때마다 스마트 계약이 자동으로 정산합니다.",
-                href: "/dashboard",
-                cta: "대시보드",
-              },
-            ].map(({ step, title, desc, href, cta }, i, arr) => (
-              <li key={step} className="flex gap-5">
+            {(STEPS ?? []).map((s, i) => (
+              <li key={s?.step ?? i} className="flex gap-5">
                 {/* Step indicator + connector */}
                 <div className="flex flex-col items-center">
                   <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-sm font-bold text-violet-400">
-                    {step}
+                    {s?.step ?? ""}
                   </div>
-                  {i < arr.length - 1 && (
+                  {i < (STEPS?.length ?? 0) - 1 && (
                     <div className="mt-1 w-px flex-1 bg-zinc-800 mb-1" />
                   )}
                 </div>
 
                 {/* Content */}
-                <div className={`pb-8 pt-1.5 ${i === arr.length - 1 ? "" : ""}`}>
-                  <h3 className="text-base font-semibold text-white">{title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-zinc-400">{desc}</p>
-                  <Link
-                    href={href}
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-400 transition hover:text-violet-300"
-                  >
-                    {cta} <IconArrowRight />
-                  </Link>
+                <div className="pb-8 pt-1.5">
+                  <h3 className="text-base font-semibold text-white">
+                    {s?.title ?? ""}
+                  </h3>
+                  <p className="mt-1 text-sm leading-relaxed text-zinc-400">
+                    {s?.desc ?? ""}
+                  </p>
+                  {s?.href ? (
+                    <Link
+                      href={s.href}
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-400 transition hover:text-violet-300"
+                    >
+                      {s?.cta ?? ""} <IconArrowRight />
+                    </Link>
+                  ) : null}
                 </div>
               </li>
             ))}
