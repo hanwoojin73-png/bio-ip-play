@@ -73,6 +73,9 @@ export default function ChallengePage() {
   const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const rawBlobRef          = useRef<Blob | null>(null);
+  const watermarkCanvasRef  = useRef<HTMLCanvasElement | null>(null);
+  const rafRef              = useRef<number | null>(null);
+  const watermarkIdRef      = useRef<string>("");
 
   // ── Bio extraction ────────────────────────────────────────────────────────────
   const capturedFramesRef   = useRef<CaptureFrame[]>([]);
@@ -201,7 +204,8 @@ export default function ChallengePage() {
   // ── Start recording ────────────────────────────────────────────────────────────
   const startRecording = useCallback(() => {
     const stream = streamRef.current;
-    if (!stream) return;
+    const video  = liveVideoRef.current;
+    if (!stream || !video) return;
 
     chunksRef.current         = [];
     capturedFramesRef.current = [];
@@ -209,11 +213,78 @@ export default function ChallengePage() {
     visualResultRef.current   = null;
     dynamicsResultRef.current = null;
 
+    watermarkIdRef.current = generateWatermarkId();
+    const wmId    = watermarkIdRef.current;
+    const dateStr = new Date().toLocaleDateString("ko-KR", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width  = video.videoWidth  || 1280;
+    canvas.height = video.videoHeight || 720;
+    watermarkCanvasRef.current = canvas;
+    const ctx = canvas.getContext("2d")!;
+
+    const drawOverlay = () => {
+      const cw = canvas.width, ch = canvas.height;
+      const scale = Math.min(cw / 1080, 1);
+      const pad = Math.round(16 * scale + 4);
+      const logoSize = Math.round(Math.max(13, 17 * scale));
+      const metaSize = Math.round(Math.max(10, 13 * scale));
+      const lineGap  = Math.round(metaSize * 1.55);
+      const innerPadX = Math.round(12 * scale);
+      const innerPadY = Math.round(8  * scale);
+      ctx.save();
+      ctx.font = `700 ${logoSize}px -apple-system,Arial,sans-serif`;
+      const logoW = ctx.measureText("BIO-IP PLAY").width;
+      ctx.font = `${metaSize}px monospace`;
+      const idW   = ctx.measureText(wmId).width;
+      const dateW = ctx.measureText(dateStr).width;
+      const maxW  = Math.max(logoW, idW, dateW);
+      const bgW   = maxW + innerPadX * 2;
+      const bgH   = logoSize + lineGap * 2 + innerPadY * 2;
+      const bgX   = cw - bgW - pad;
+      const bgY   = ch - bgH - pad;
+      ctx.globalAlpha = 0.72;
+      ctx.fillStyle   = "rgba(0,0,0,0.65)";
+      ctx.beginPath();
+      ctx.roundRect(bgX, bgY, bgW, bgH, 6);
+      ctx.fill();
+      ctx.globalAlpha  = 0.85;
+      ctx.textBaseline = "top";
+      ctx.textAlign    = "left";
+      const tx = bgX + innerPadX;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `700 ${logoSize}px -apple-system,Arial,sans-serif`;
+      ctx.fillText("BIO-IP PLAY", tx, bgY + innerPadY);
+      ctx.fillStyle = "#cccccc";
+      ctx.font = `${metaSize}px monospace`;
+      ctx.fillText(wmId,    tx, bgY + innerPadY + logoSize + (lineGap - metaSize) / 2);
+      ctx.fillText(dateStr, tx, bgY + innerPadY + logoSize + lineGap + (lineGap - metaSize) / 2);
+      ctx.restore();
+    };
+
+    const renderFrame = () => {
+      if (video.readyState >= 2) {
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width  = video.videoWidth  || 1280;
+          canvas.height = video.videoHeight || 720;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        drawOverlay();
+      }
+      rafRef.current = requestAnimationFrame(renderFrame);
+    };
+    rafRef.current = requestAnimationFrame(renderFrame);
+
+    const canvasStream = canvas.captureStream(30);
+    stream.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
+
     const mimeType =
       ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
         .find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
 
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const recorder = new MediaRecorder(canvasStream, mimeType ? { mimeType } : undefined);
     mediaRecorderRef.current = recorder;
 
     recorder.ondataavailable = (e) => {
@@ -221,9 +292,9 @@ export default function ChallengePage() {
     };
 
     recorder.onstop = () => {
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       const blob = new Blob(chunksRef.current, { type: mimeType || "video/webm" });
       rawBlobRef.current = blob;
-      // Skip watermark post-processing — go directly to preview
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
       setCaptureState("preview");
@@ -240,6 +311,7 @@ export default function ChallengePage() {
   const stopRecording = useCallback(() => {
     if (timerRef.current)         clearInterval(timerRef.current);
     if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+    if (rafRef.current)           { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     setWatermarkError(null);
     mediaRecorderRef.current?.stop();
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -395,6 +467,7 @@ export default function ChallengePage() {
     return () => {
       if (timerRef.current)         clearInterval(timerRef.current);
       if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+      if (rafRef.current)           cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       disposeMediaPipe();
     };
