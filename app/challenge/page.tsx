@@ -2,19 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  extractVisualSignature,
-  extractFaceLandmarks,
-  extractPoseLandmarks,
-  disposeMediaPipe,
-  type ExtractionResult,
-} from "@/lib/bio-extractor/mediapipe";
-import {
-  generateDynamicsSignature,
-  type CaptureFrame,
-  type GeneratorResult,
-} from "@/lib/signature/generator";
-import { applyWatermark, generateWatermarkId, type WatermarkResult } from "@/lib/watermark";
+import { generateWatermarkId, type WatermarkResult } from "@/lib/watermark";
 import { uploadVideo, saveBioIPAsset, getOrCreateUserId } from "@/lib/supabase/upload";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,20 +58,11 @@ export default function ChallengePage() {
   const streamRef           = useRef<MediaStream | null>(null);
   const mediaRecorderRef    = useRef<MediaRecorder | null>(null);
   const chunksRef           = useRef<Blob[]>([]);
-  const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
-  const frameIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const rawBlobRef          = useRef<Blob | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rawBlobRef  = useRef<Blob | null>(null);
   const watermarkCanvasRef  = useRef<HTMLCanvasElement | null>(null);
   const rafRef              = useRef<number | null>(null);
   const watermarkIdRef      = useRef<string>("");
-
-  // ── Bio extraction ────────────────────────────────────────────────────────────
-  const capturedFramesRef   = useRef<CaptureFrame[]>([]);
-  const isCapturingFrameRef = useRef(false);
-  const recordingStartRef   = useRef(0);
-  const visualResultRef     = useRef<ExtractionResult | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const dynamicsResultRef   = useRef<GeneratorResult | null>(null);
 
   // ── Pinch zoom ────────────────────────────────────────────────────────────────
   const pinchStartRef = useRef(0);
@@ -182,36 +161,13 @@ export default function ChallengePage() {
     e.target.value = "";
   }, []);
 
-  // ── Per-frame landmark capture ─────────────────────────────────────────────────
-  const captureFrame = useCallback(async () => {
-    if (isCapturingFrameRef.current || !liveVideoRef.current) return;
-    isCapturingFrameRef.current = true;
-    try {
-      const [face, pose] = await Promise.all([
-        extractFaceLandmarks(liveVideoRef.current),
-        extractPoseLandmarks(liveVideoRef.current),
-      ]);
-      capturedFramesRef.current.push({
-        timestamp: Date.now() - recordingStartRef.current,
-        face,
-        pose,
-      });
-    } finally {
-      isCapturingFrameRef.current = false;
-    }
-  }, []);
-
   // ── Start recording ────────────────────────────────────────────────────────────
   const startRecording = useCallback(() => {
     const stream = streamRef.current;
     const video  = liveVideoRef.current;
     if (!stream || !video) return;
 
-    chunksRef.current         = [];
-    capturedFramesRef.current = [];
-    recordingStartRef.current = Date.now();
-    visualResultRef.current   = null;
-    dynamicsResultRef.current = null;
+    chunksRef.current = [];
 
     watermarkIdRef.current = generateWatermarkId();
     const wmId    = watermarkIdRef.current;
@@ -303,15 +259,13 @@ export default function ChallengePage() {
     recorder.start(100);
     setElapsed(0);
     setCaptureState("recording");
-    timerRef.current         = setInterval(() => setElapsed((p) => p + 1), 1000);
-    frameIntervalRef.current = setInterval(() => { captureFrame(); }, 200);
-  }, [captureFrame]);
+    timerRef.current = setInterval(() => setElapsed((p) => p + 1), 1000);
+  }, []);
 
   // ── Stop recording ─────────────────────────────────────────────────────────────
   const stopRecording = useCallback(() => {
-    if (timerRef.current)         clearInterval(timerRef.current);
-    if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
-    if (rafRef.current)           { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (rafRef.current)   { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     setWatermarkError(null);
     mediaRecorderRef.current?.stop();
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -325,19 +279,6 @@ export default function ChallengePage() {
     if (!blob) return;
 
     let cancelled = false;
-
-    // Bio extraction — non-blocking, best-effort
-    if (liveVideoRef.current) {
-      extractVisualSignature(liveVideoRef.current)
-        .then((r) => { if (!cancelled) visualResultRef.current = r; })
-        .catch(() => {});
-    }
-    if (capturedFramesRef.current.length >= 2) {
-      requestAnimationFrame(() => {
-        try { dynamicsResultRef.current = generateDynamicsSignature(capturedFramesRef.current); }
-        catch {}
-      });
-    }
 
     applyWatermark(blob, {
       uniqueId:   generateWatermarkId(),
@@ -372,8 +313,7 @@ export default function ChallengePage() {
     setWatermarkProgress(0);
     setWatermarkError(null);
     setRegisterState("idle");
-    rawBlobRef.current        = null;
-    capturedFramesRef.current = [];
+    rawBlobRef.current = null;
     setElapsed(0);
     setError(null);
     setZoom(1);
@@ -434,15 +374,13 @@ export default function ChallengePage() {
       console.log("[register] 업로드 완료:", videoUrl);
 
       setRegisterStep("DB 저장 중…");
-      const frames    = capturedFramesRef.current;
-      const lastFrame = frames.length > 0 ? frames[frames.length - 1] : null;
-      const wId       = watermarkResult?.uniqueId ?? generateWatermarkId();
+      const wId = watermarkResult?.uniqueId ?? generateWatermarkId();
       await withTimeout(
         saveBioIPAsset({
           userId,
           videoUrl,
-          faceLandmarks: lastFrame?.face ?? [],
-          poseLandmarks: lastFrame?.pose ?? [],
+          faceLandmarks: [],
+          poseLandmarks: [],
           watermarkId:   wId,
         }),
         15_000,
@@ -465,11 +403,9 @@ export default function ChallengePage() {
   // ── Cleanup on unmount ─────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (timerRef.current)         clearInterval(timerRef.current);
-      if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
-      if (rafRef.current)           cancelAnimationFrame(rafRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (rafRef.current)   cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      disposeMediaPipe();
     };
   }, []);
 
