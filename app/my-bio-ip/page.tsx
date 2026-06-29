@@ -39,7 +39,7 @@ function Spinner() {
 // ─── Asset card ───────────────────────────────────────────────────────────────
 
 function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () => void }) {
-  const [deleting, setDeleting] = React.useState(false);
+  const [deleting, setDeleting] = useState(false);
   const handleDelete = async () => {
     if (!confirm("이 Bio-IP 자산을 삭제하시겠습니까?")) return;
     setDeleting(true);
