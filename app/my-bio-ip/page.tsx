@@ -91,9 +91,16 @@ function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () 
             <p className="mt-0.5 font-mono text-[10px] text-zinc-500">{asset.watermark_id}</p>
           )}
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusStyle.cls}`}>
-          {statusStyle.label}
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusStyle.cls}`}>
+            {statusStyle.label}
+          </span>
+          {asset.content_type && (
+            <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+              {asset.content_type === "character" ? "🎭 캐릭터" : "🙋 본인"}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Bio data summary */}

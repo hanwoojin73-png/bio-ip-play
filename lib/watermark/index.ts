@@ -16,11 +16,12 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface WatermarkOptions {
-  uniqueId?:   string;
-  logoText?:   string;
-  date?:       Date;
-  opacity?:    number;                        // 0–1, default 0.85
-  onProgress?: (ratio: number) => void;       // 0 → 1
+  uniqueId?:    string;
+  logoText?:    string;
+  contentType?: "self" | "character";
+  date?:        Date;
+  opacity?:     number;                       // 0–1, default 0.85
+  onProgress?:  (ratio: number) => void;      // 0 → 1
 }
 
 export interface WatermarkResult {
@@ -143,12 +144,14 @@ export async function applyWatermark(
   options:    WatermarkOptions = {},
 ): Promise<WatermarkResult> {
   const {
-    uniqueId:  providedId,
-    logoText = "BIO-IP PLAY",
-    date     = new Date(),
-    opacity  = 0.85,
+    uniqueId:    providedId,
+    contentType = "self",
+    date        = new Date(),
+    opacity     = 0.85,
     onProgress,
   } = options;
+  const logoText = options.logoText
+    ?? (contentType === "character" ? "BIO-IP PLAY · 캐릭터IP" : "BIO-IP PLAY · 본인인증");
 
   const uniqueId = providedId ?? generateWatermarkId();
   const dateStr  = date.toLocaleDateString("ko-KR", {

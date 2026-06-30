@@ -25,6 +25,7 @@
  */
 
 import { getSupabaseClient } from "@/lib/supabase";
+import type { ContentType } from "@/types/bio-ip";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -36,26 +37,28 @@ export interface Landmark {
 }
 
 export interface SaveBioIPAssetInput {
-  userId:         string;
-  videoUrl:       string;
-  faceLandmarks:  Landmark[];
-  poseLandmarks:  Landmark[];
-  watermarkId:    string;
-  title?:         string;
+  userId:        string;
+  videoUrl:      string;
+  faceLandmarks: Landmark[];
+  poseLandmarks: Landmark[];
+  watermarkId:   string;
+  contentType?:  ContentType;
+  title?:        string;
 }
 
 /** Shape returned by getBioIPAssets */
 export interface BioIPAssetRecord {
-  id:              string;
-  owner_id:        string;
-  video_url:       string | null;
-  watermark_id:    string | null;
-  title:           string;
-  status:          string;
-  registered_at:   string;
-  updated_at:      string;
-  face_landmarks:  Landmark[] | null;
-  pose_landmarks:  Landmark[] | null;
+  id:             string;
+  owner_id:       string;
+  video_url:      string | null;
+  watermark_id:   string | null;
+  content_type:   ContentType | null;
+  title:          string;
+  status:         string;
+  registered_at:  string;
+  updated_at:     string;
+  face_landmarks: Landmark[] | null;
+  pose_landmarks: Landmark[] | null;
 }
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
@@ -103,6 +106,7 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
       face_landmarks:   input.faceLandmarks,
       pose_landmarks:   input.poseLandmarks,
       watermark_id:     input.watermarkId,
+      content_type:     input.contentType ?? "self",
       title:            input.title ?? `Bio-IP Capture ${dateLabel}`,
       bio_signature_id: input.watermarkId,
       description:      "",
@@ -132,7 +136,7 @@ export async function getBioIPAssets(userId: string): Promise<BioIPAssetRecord[]
 
   const { data, error } = await (supabase.from("bio_ip_assets") as any)
     .select(
-      "id, owner_id, video_url, watermark_id, title, status, registered_at, updated_at, face_landmarks, pose_landmarks",
+      "id, owner_id, video_url, watermark_id, content_type, title, status, registered_at, updated_at, face_landmarks, pose_landmarks",
     )
     .eq("owner_id", userId)
     .order("registered_at", { ascending: false });

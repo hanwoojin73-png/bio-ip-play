@@ -61,6 +61,9 @@ export interface Challenge {
 
 // ─── BioIPAsset ───────────────────────────────────────────────────────────────
 
+/** 'self' = 본인 모습 (퍼블리시티권), 'character' = 창작 캐릭터 (저작권) */
+export type ContentType = "self" | "character";
+
 export type LicenseScope = "exclusive" | "non_exclusive" | "personal_only";
 export type AssetStatus = "draft" | "registered" | "disputed" | "revoked";
 
@@ -80,6 +83,7 @@ export interface BioIPAsset {
   title: string;
   description: string;
   status: AssetStatus;
+  contentType: ContentType;     // 'self' | 'character'
   licenseTerms: LicenseTerms;
   registeredAt: string;         // ISO-8601
   updatedAt: string;

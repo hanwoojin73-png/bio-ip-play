@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { generateWatermarkId, type WatermarkResult } from "@/lib/watermark";
+import { generateWatermarkId, applyWatermark, type WatermarkResult } from "@/lib/watermark";
 import { uploadVideo, saveBioIPAsset, getOrCreateUserId } from "@/lib/supabase/upload";
+import type { ContentType } from "@/types/bio-ip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,9 +46,10 @@ export default function ChallengePage() {
   const [watermarkError,    setWatermarkError]    = useState<string | null>(null);
   const [watermarkResult,   setWatermarkResult]   = useState<WatermarkResult | null>(null);
   const [previewUrl,        setPreviewUrl]        = useState<string | null>(null);
-  const [registerState,     setRegisterState]     = useState<RegisterState>("idle");
-  const [registerStep,      setRegisterStep]      = useState<string>("");
-  const [pendingWatermark,  setPendingWatermark]  = useState(false);
+  const [registerState,  setRegisterState]  = useState<RegisterState>("idle");
+  const [registerStep,   setRegisterStep]   = useState<string>("");
+  const [contentType,    setContentType]    = useState<ContentType>("self");
+  const [pendingWatermark, setPendingWatermark] = useState(false);
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
   const liveVideoRef    = useRef<HTMLVideoElement>(null);
@@ -382,6 +384,7 @@ export default function ChallengePage() {
           faceLandmarks: [],
           poseLandmarks: [],
           watermarkId:   wId,
+          contentType,
         }),
         15_000,
         "DB 저장",
@@ -398,7 +401,7 @@ export default function ChallengePage() {
       setRegisterStep("");
       setRegisterState("idle");
     }
-  }, [router, watermarkResult]);
+  }, [router, watermarkResult, contentType]);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -746,6 +749,33 @@ export default function ChallengePage() {
 
             {registerState === "idle" && (
               <div className="flex flex-col gap-3">
+                {/* Content type selector */}
+                <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-md">
+                  <p className="mb-2.5 text-center text-xs font-medium text-white/70">이 영상은 어떤 모습인가요?</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setContentType("self")}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-semibold transition-colors ${
+                        contentType === "self"
+                          ? "bg-violet-600 text-white shadow-md"
+                          : "bg-white/15 text-white/70"
+                      }`}
+                    >
+                      🙋 내 모습 그대로
+                    </button>
+                    <button
+                      onClick={() => setContentType("character")}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-semibold transition-colors ${
+                        contentType === "character"
+                          ? "bg-violet-600 text-white shadow-md"
+                          : "bg-white/15 text-white/70"
+                      }`}
+                    >
+                      🎭 내가 만든 캐릭터
+                    </button>
+                  </div>
+                </div>
+
                 <button
                   onClick={registerBioIP}
                   className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 text-base font-bold text-white shadow-lg shadow-violet-900/50 active:scale-[0.97]"
@@ -793,7 +823,11 @@ export default function ChallengePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                   </svg>
                 </div>
-                <p className="text-sm font-semibold text-emerald-300">등록 완료! 이동 중…</p>
+                <p className="text-sm font-semibold text-emerald-300">
+                  {contentType === "character"
+                    ? "🎭 캐릭터 IP 등록 완료! 저작권으로 보호됩니다."
+                    : "🙋 본인 Bio-IP 등록 완료! 퍼블리시티권으로 보호됩니다."}
+                </p>
               </div>
             )}
           </div>

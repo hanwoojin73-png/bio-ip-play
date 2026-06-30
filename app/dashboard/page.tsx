@@ -17,6 +17,7 @@ const ASSETS: BioIPAsset[] = [
     title: "Han Visual & Vocal Identity v1",
     description: "",
     status: "registered",
+    contentType: "self",
     licenseTerms: {
       scope: "non_exclusive",
       allowedUseCases: ["advertising", "entertainment", "education"],
@@ -36,6 +37,7 @@ const ASSETS: BioIPAsset[] = [
     title: "Motion Dynamics Layer – Dance",
     description: "",
     status: "disputed",
+    contentType: "character",
     licenseTerms: {
       scope: "exclusive",
       allowedUseCases: ["metaverse", "gaming"],
@@ -56,6 +58,7 @@ const ASSETS: BioIPAsset[] = [
     title: "Vocal Signature – Narration Profile",
     description: "",
     status: "draft",
+    contentType: "self",
     licenseTerms: {
       scope: "personal_only",
       allowedUseCases: ["voiceover", "audiobook"],
