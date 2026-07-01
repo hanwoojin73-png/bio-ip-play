@@ -38,6 +38,206 @@ function Spinner() {
 
 // ─── Asset card ───────────────────────────────────────────────────────────────
 
+function openLicenseCertificate(asset: BioIPAssetRecord) {
+  const contentTypeLabel =
+    asset.content_type === "character"
+      ? "캐릭터 IP (저작권 보호)"
+      : "본인 (퍼블리시티권 보호)";
+
+  const today = new Date().toLocaleDateString("ko-KR", {
+    year: "numeric", month: "long", day: "numeric",
+  });
+
+  const registeredAt = asset.registered_at
+    ? new Date(asset.registered_at).toLocaleDateString("ko-KR", {
+        year: "numeric", month: "long", day: "numeric",
+      })
+    : "—";
+
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BIO-IP 라이선스 인증서</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Apple SD Gothic Neo", "Noto Sans KR", Arial, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .cert {
+      background: #fff;
+      width: 210mm;
+      min-height: 297mm;
+      padding: 60px 70px;
+      border: 1px solid #ddd;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .header {
+      text-align: center;
+      border-bottom: 3px double #111;
+      padding-bottom: 32px;
+      margin-bottom: 40px;
+    }
+    .platform {
+      font-size: 11px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 16px;
+    }
+    .title-ko {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #111;
+      margin-bottom: 6px;
+    }
+    .title-en {
+      font-size: 14px;
+      color: #555;
+      letter-spacing: 1px;
+    }
+    .seal {
+      width: 72px;
+      height: 72px;
+      border: 3px solid #111;
+      border-radius: 50%;
+      margin: 24px auto 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #111;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .body { flex: 1; }
+    .intro {
+      font-size: 13px;
+      color: #333;
+      line-height: 1.8;
+      text-align: center;
+      margin-bottom: 48px;
+      padding: 20px 24px;
+      background: #fafafa;
+      border-left: 4px solid #111;
+    }
+    .fields { width: 100%; border-collapse: collapse; }
+    .fields tr { border-bottom: 1px solid #eee; }
+    .fields td {
+      padding: 16px 12px;
+      font-size: 13px;
+    }
+    .fields .label {
+      color: #777;
+      font-weight: 600;
+      width: 160px;
+      white-space: nowrap;
+    }
+    .fields .value {
+      color: #111;
+      font-weight: 500;
+    }
+    .fields .mono {
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      color: #333;
+      word-break: break-all;
+    }
+    .footer {
+      margin-top: 60px;
+      border-top: 1px solid #ccc;
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .footer-left { font-size: 11px; color: #aaa; line-height: 1.7; }
+    .footer-right { text-align: right; font-size: 12px; color: #333; }
+    .footer-right .issued-label { color: #888; font-size: 11px; }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .cert { border: none; box-shadow: none; width: 100%; min-height: unset; }
+    }
+    @page { size: A4; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="cert">
+    <div class="header">
+      <p class="platform">BIO-IP PLAY</p>
+      <p class="title-ko">라이선스 인증서</p>
+      <p class="title-en">Bio-IP License Certificate</p>
+      <div class="seal">BIO<br/>IP</div>
+    </div>
+
+    <div class="body">
+      <p class="intro">
+        본 인증서는 BIO-IP PLAY 플랫폼에 등록된 생체 IP 자산의<br/>
+        등록 사실을 증명합니다.
+      </p>
+
+      <table class="fields">
+        <tr>
+          <td class="label">자산명</td>
+          <td class="value">${asset.title ?? "—"}</td>
+        </tr>
+        <tr>
+          <td class="label">워터마크 ID</td>
+          <td class="value mono">${asset.watermark_id ?? "—"}</td>
+        </tr>
+        <tr>
+          <td class="label">콘텐츠 유형</td>
+          <td class="value">${contentTypeLabel}</td>
+        </tr>
+        <tr>
+          <td class="label">등록일</td>
+          <td class="value">${registeredAt}</td>
+        </tr>
+        <tr>
+          <td class="label">발급일</td>
+          <td class="value">${today}</td>
+        </tr>
+        <tr>
+          <td class="label">발급 플랫폼</td>
+          <td class="value">BIO-IP PLAY (bio-ip-play.vercel.app)</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="footer">
+      <div class="footer-left">
+        bio-ip-play.vercel.app<br/>
+        © BIO-IP PLAY. All rights reserved.
+      </div>
+      <div class="footer-right">
+        <p class="issued-label">발급일</p>
+        <p>${today}</p>
+      </div>
+    </div>
+  </div>
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=900,height=1100");
+  if (!win) { alert("팝업 차단을 해제해 주세요."); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
 function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () => void }) {
   const [deleting, setDeleting] = useState(false);
   const handleDelete = async () => {
@@ -132,7 +332,10 @@ function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () 
               다운로드
             </a>
           )}
-          <button className="rounded-md bg-violet-700/40 px-2.5 py-1.5 text-violet-300 transition hover:bg-violet-700 hover:text-white">
+          <button
+            onClick={() => openLicenseCertificate(asset)}
+            className="rounded-md bg-violet-700/40 px-2.5 py-1.5 text-violet-300 transition hover:bg-violet-700 hover:text-white"
+          >
             라이선스
           </button>
           <button onClick={handleDelete} disabled={deleting} className="rounded-md bg-red-900/40 px-2.5 py-1.5 text-red-400 transition hover:bg-red-700 hover:text-white disabled:opacity-40">
