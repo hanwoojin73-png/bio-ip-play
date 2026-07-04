@@ -37,10 +37,6 @@ export default function ChallengePage() {
   const [captureState,      setCaptureState]      = useState<CaptureState>("idle");
   const [facingMode,        setFacingMode]        = useState<FacingMode>("user");
   const [orientation,       setOrientation]       = useState<Orientation>("portrait");
-  // videoAspect: the stream's actual measured width/height ratio (from videoWidth/
-  // videoHeight once metadata loads) — used to size the preview so it always fills
-  // the screen correctly even if a device ignored our aspectRatio constraint.
-  const [videoAspect,       setVideoAspect]       = useState(9 / 16);
   const [elapsed,           setElapsed]           = useState(0);
   const [error,             setError]             = useState<string | null>(null);
   const [watermarkProgress, setWatermarkProgress] = useState(0);
@@ -73,7 +69,6 @@ export default function ChallengePage() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     try {
       const wantPortrait = orient === "portrait";
-      setVideoAspect(wantPortrait ? 9 / 16 : 16 / 9); // best guess until real metadata loads
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: facing,
@@ -98,16 +93,6 @@ export default function ChallengePage() {
     } catch {
       setError("카메라 또는 마이크 접근 권한이 필요합니다.");
     }
-  }, []);
-
-  // ── Track the stream's real aspect ratio ──────────────────────────────────────
-  // Some Android devices ignore the aspectRatio constraint entirely, so the
-  // preview must always be sized from what the stream actually reports, not
-  // from what we asked for.
-  const handleLoadedMetadata = useCallback(() => {
-    const video = liveVideoRef.current;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
-    setVideoAspect(video.videoWidth / video.videoHeight);
   }, []);
 
   // ── Flip camera ───────────────────────────────────────────────────────────────
@@ -181,18 +166,19 @@ export default function ChallengePage() {
       year: "numeric", month: "2-digit", day: "2-digit",
     });
 
-    // Some Android devices ignore the aspectRatio constraint and hand back a
-    // stream shaped the opposite way from how the phone is actually being held
-    // (e.g. a landscape frame while held portrait). Detect that mismatch here
-    // and rotate 90° while drawing so the recorded file still comes out in the
-    // orientation the phone was physically held in.
-    const wantPortrait   = orientationRef.current === "portrait";
-    const actualPortrait = video.videoHeight >= video.videoWidth;
-    const needsRotate    = !!video.videoWidth && !!video.videoHeight && actualPortrait !== wantPortrait;
-
+    // Many Android devices ignore the getUserMedia aspectRatio constraint and
+    // just hand back their native widescreen stream (e.g. 1920x1080) no matter
+    // what orientation the phone is actually held in — constraints alone can't
+    // fix this on those devices. So the recording canvas is fixed to the
+    // orientation's target resolution, and every frame is center-cropped from
+    // whatever the stream actually delivers to fill it — the same "cover" math
+    // the live preview uses via CSS object-fit: cover, so preview and output
+    // always show the identical framing.
+    const isPortraitTarget = orientationRef.current === "portrait";
     const canvas = document.createElement("canvas");
-    canvas.width  = (needsRotate ? video.videoHeight : video.videoWidth)  || 1280;
-    canvas.height = (needsRotate ? video.videoWidth  : video.videoHeight) || 720;
+    canvas.width  = isPortraitTarget ? 1080 : 1920;
+    canvas.height = isPortraitTarget ? 1920 : 1080;
+    const targetAspect = canvas.width / canvas.height;
     watermarkCanvasRef.current = canvas;
     const ctx = canvas.getContext("2d")!;
 
@@ -236,22 +222,26 @@ export default function ChallengePage() {
     };
 
     const renderFrame = () => {
-      if (video.readyState >= 2) {
-        const targetW = (needsRotate ? video.videoHeight : video.videoWidth)  || 1280;
-        const targetH = (needsRotate ? video.videoWidth  : video.videoHeight) || 720;
-        if (canvas.width !== targetW || canvas.height !== targetH) {
-          canvas.width  = targetW;
-          canvas.height = targetH;
-        }
-        if (needsRotate) {
-          ctx.save();
-          ctx.translate(canvas.width / 2, canvas.height / 2);
-          ctx.rotate(Math.PI / 2);
-          ctx.drawImage(video, -video.videoWidth / 2, -video.videoHeight / 2, video.videoWidth, video.videoHeight);
-          ctx.restore();
+      if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+        const vw = video.videoWidth, vh = video.videoHeight;
+        const videoAspect = vw / vh;
+        // Center-crop the source frame to the target aspect — identical to
+        // what CSS object-fit: cover does for the live preview.
+        let sx, sy, sw, sh;
+        if (videoAspect > targetAspect) {
+          // stream is relatively wider than the target → crop left/right
+          sh = vh;
+          sw = vh * targetAspect;
+          sx = (vw - sw) / 2;
+          sy = 0;
         } else {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          // stream is relatively taller than the target → crop top/bottom
+          sw = vw;
+          sh = vw / targetAspect;
+          sx = 0;
+          sy = (vh - sh) / 2;
         }
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
         drawOverlay();
       }
       rafRef.current = requestAnimationFrame(renderFrame);
@@ -447,11 +437,6 @@ export default function ChallengePage() {
   // ── Live video CSS: mirror the front camera only ──────────────────────────────
   const videoTransform = facingMode === "user" ? "scaleX(-1)" : "none";
 
-  // object-contain guarantees the full camera FoV is always visible — it never
-  // crops, unlike object-cover, which was cropping hard whenever the actual
-  // stream aspect ratio didn't exactly match the viewport.
-  const videoClass = "absolute inset-0 h-full w-full object-contain";
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
@@ -466,14 +451,16 @@ export default function ChallengePage() {
         onChange={handleFileUpload}
       />
 
-      {/* ── Camera viewport — sized from the stream's real aspect ratio, so it ──
-          always fills the screen as much as possible with zero cropping ────── */}
+      {/* ── Camera viewport — fixed to the target orientation's aspect ratio.
+          The live feed uses object-fit: cover to center-crop into that box,
+          exactly mirroring the crop the recording canvas performs, so preview
+          and recorded output always show the identical framing. ─────────── */}
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         style={{
-          aspectRatio: videoAspect,
-          width:    videoAspect >= 1 ? "100%" : "auto",
-          height:   videoAspect >= 1 ? "auto" : "100%",
+          aspectRatio: orientation === "landscape" ? "16 / 9" : "9 / 16",
+          width:    orientation === "landscape" ? "100%" : "auto",
+          height:   orientation === "landscape" ? "auto" : "100%",
           maxWidth:  "100%",
           maxHeight: "100%",
         }}
@@ -484,12 +471,12 @@ export default function ChallengePage() {
           autoPlay
           muted
           playsInline
-          onLoadedMetadata={handleLoadedMetadata}
-          className={`${videoClass} transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
           style={{ transform: videoTransform, transformOrigin: "center center" }}
         />
 
-        {/* ── Watermarked preview ─────────────────────────────────────────── */}
+        {/* ── Watermarked preview — already exactly the target aspect, so ──
+            object-contain never needs to crop it further ───────────────── */}
         {isPreview && previewUrl && (
           <video
             ref={previewVideoRef}
