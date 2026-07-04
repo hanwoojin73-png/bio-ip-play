@@ -56,6 +56,11 @@ interface Stat {
   label: string;
 }
 
+interface TechPoint {
+  title: string;
+  desc:  string;
+}
+
 interface Step {
   step:  string;
   title: string;
@@ -103,6 +108,12 @@ const STATS: Stat[] = [
   { value: "4",    unit: "요소",    label: "초상·표정·몸짓·음성" },
   { value: "100%", unit: "본인 소유", label: "소유권 등록" },
   { value: "0",    unit: "중개자",  label: "직접 로열티 정산" },
+];
+
+const TECH_POINTS: TechPoint[] = [
+  { title: "4가지 요소",   desc: "초상 · 표정 · 몸짓 · 음성" },
+  { title: "호흡 분석",     desc: "4요소 사이의 고유한 리듬과 타이밍을 데이터화" },
+  { title: "고유 지문 생성", desc: "대체 불가능한 나만의 Bio-IP" },
 ];
 
 const STEPS: Step[] = [
@@ -213,6 +224,39 @@ export default function LandingPage() {
               <p className="mt-0.5 text-xs text-zinc-500">{stat?.label ?? ""}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Core Technology ── */}
+      <section className="border-t border-zinc-800 px-6 py-20">
+        <div className="mx-auto max-w-5xl space-y-12">
+          <div className="text-center space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-widest text-orange-500">
+              Technology
+            </p>
+            <h2 className="text-2xl font-bold sm:text-3xl">
+              BIO-IP PLAY만의 기술
+            </h2>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-3">
+            {(TECH_POINTS ?? []).map((t, i) => (
+              <div
+                key={t?.title ?? i}
+                className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-center transition hover:border-orange-700/60"
+              >
+                <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-orange-500/10 text-sm font-bold text-orange-400">
+                  {String(i + 1).padStart(2, "0")}
+                </div>
+                <h3 className="text-base font-semibold text-orange-400">
+                  {t?.title ?? ""}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                  {t?.desc ?? ""}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

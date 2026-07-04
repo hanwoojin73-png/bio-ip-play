@@ -89,7 +89,16 @@ export default function ChallengePage() {
       // Check hardware zoom support
       const track = stream.getVideoTracks()[0];
       const caps  = (track?.getCapabilities?.() ?? {}) as Record<string, unknown> & { zoom?: { min: number; max: number } };
-      setHwZoomRange(caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max } : null);
+      const zoomRange = caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max } : null;
+      setHwZoomRange(zoomRange);
+      setZoom(1);
+      // Force hardware zoom to its native minimum (widest FoV) so "1x" is never
+      // pre-cropped by whatever zoom level the device happened to power on with.
+      if (zoomRange) {
+        (track as MediaStreamTrack & { applyConstraints: (c: object) => Promise<void> })
+          .applyConstraints({ advanced: [{ zoom: zoomRange.min }] })
+          .catch((e: unknown) => console.warn("[zoom] reset to min failed:", e));
+      }
       setCaptureState("ready");
     } catch {
       setError("카메라 또는 마이크 접근 권한이 필요합니다.");
@@ -97,13 +106,16 @@ export default function ChallengePage() {
   }, []);
 
   // ── Hardware zoom via applyConstraints ────────────────────────────────────────
-  // Runs whenever zoom state changes; no-op if camera doesn't support hw zoom.
+  // Runs whenever zoom state changes. UI zoom 1x always maps to the hardware
+  // minimum (widest FoV) — never left at whatever the device happened to default
+  // to. UI zoom > 1x is mapped proportionally into the hardware's own range.
   useEffect(() => {
     const track = streamRef.current?.getVideoTracks()[0];
-    if (!track || !hwZoomRange || zoom <= 1) return;
-    const clamped = Math.min(hwZoomRange.max, Math.max(hwZoomRange.min, zoom));
+    if (!track || !hwZoomRange) return;
+    const { min, max } = hwZoomRange;
+    const hwZoom = zoom <= 1 ? min : Math.min(max, min + (zoom - 1) * (max - min) / 2);
     (track as MediaStreamTrack & { applyConstraints: (c: object) => Promise<void> })
-      .applyConstraints({ advanced: [{ zoom: clamped }] })
+      .applyConstraints({ advanced: [{ zoom: hwZoom }] })
       .catch((e: unknown) => console.warn("[zoom] applyConstraints:", e));
   }, [zoom, hwZoomRange]);
 
@@ -428,15 +440,21 @@ export default function ChallengePage() {
   const isWatermarking = captureState === "watermarking";
   const isPreview      = captureState === "preview";
 
-  // ── Live video CSS: mirror + zoom (CSS scale only for zoom-in without hw zoom) ─
+  // ── Live video CSS: mirror + zoom ──────────────────────────────────────────────
+  // CSS scale is only used as a fallback digital zoom when the device has no
+  // hardware zoom capability — otherwise the hw zoom effect above already does
+  // the zooming, and stacking CSS scale on top would double-zoom the image.
   const videoTransform = [
     facingMode === "user" ? "scaleX(-1)" : "",
-    zoom !== 1 ? `scale(${zoom})` : "",
+    !hwZoomRange && zoom !== 1 ? `scale(${zoom})` : "",
   ].filter(Boolean).join(" ") || "none";
 
-  const videoClass = orientation === "landscape"
-    ? "absolute inset-0 w-full h-full object-contain"
-    : "absolute inset-0 h-full w-full object-cover";
+  // object-contain guarantees the full camera FoV is always visible — it never
+  // crops, unlike object-cover, which was cropping hard whenever the actual
+  // stream aspect ratio didn't exactly match the viewport.
+  const videoClass = "absolute inset-0 h-full w-full object-contain";
+
+  const previewAspectRatio = orientation === "landscape" ? "16 / 9" : "9 / 16";
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
@@ -457,26 +475,38 @@ export default function ChallengePage() {
         onChange={handleFileUpload}
       />
 
-      {/* ── Live camera feed — always mounted ────────────────────────────── */}
-      <video
-        ref={liveVideoRef}
-        autoPlay
-        muted
-        playsInline
-        className={`${videoClass} transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
-        style={{ transform: videoTransform, transformOrigin: "center center" }}
-      />
-
-      {/* ── Watermarked preview ───────────────────────────────────────────── */}
-      {isPreview && previewUrl && (
+      {/* ── Camera viewport — fixed aspect ratio, letterboxed, never cropped ── */}
+      <div
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+        style={{
+          aspectRatio: previewAspectRatio,
+          width:    orientation === "landscape" ? "100%" : "auto",
+          height:   orientation === "landscape" ? "auto" : "100%",
+          maxWidth:  "100%",
+          maxHeight: "100%",
+        }}
+      >
+        {/* ── Live camera feed — always mounted ──────────────────────────── */}
         <video
-          ref={previewVideoRef}
+          ref={liveVideoRef}
           autoPlay
-          loop
+          muted
           playsInline
-          className="absolute inset-0 h-full w-full object-cover"
+          className={`${videoClass} transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
+          style={{ transform: videoTransform, transformOrigin: "center center" }}
         />
-      )}
+
+        {/* ── Watermarked preview ─────────────────────────────────────────── */}
+        {isPreview && previewUrl && (
+          <video
+            ref={previewVideoRef}
+            autoPlay
+            loop
+            playsInline
+            className="absolute inset-0 h-full w-full object-contain"
+          />
+        )}
+      </div>
 
       {/* ════════════════════════════════════════════════════════════════════
           IDLE — camera start prompt + file upload
