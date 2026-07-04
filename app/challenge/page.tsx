@@ -37,9 +37,6 @@ export default function ChallengePage() {
   const [captureState,      setCaptureState]      = useState<CaptureState>("idle");
   const [facingMode,        setFacingMode]        = useState<FacingMode>("user");
   const [orientation,       setOrientation]       = useState<Orientation>("portrait");
-  const [zoom,              setZoom]              = useState(1);
-  // hwZoomRange: set when the camera track supports the zoom constraint natively
-  const [hwZoomRange,       setHwZoomRange]       = useState<{ min: number; max: number } | null>(null);
   // videoAspect: the stream's actual measured width/height ratio (from videoWidth/
   // videoHeight once metadata loads) — used to size the preview so it always fills
   // the screen correctly even if a device ignored our aspectRatio constraint.
@@ -70,9 +67,6 @@ export default function ChallengePage() {
   const rafRef              = useRef<number | null>(null);
   const watermarkIdRef      = useRef<string>("");
 
-  // ── Pinch zoom ────────────────────────────────────────────────────────────────
-  const pinchStartRef = useRef(0);
-
   // ── Start camera ─────────────────────────────────────────────────────────────
   const startCamera = useCallback(async (facing: FacingMode, orient: Orientation = "portrait") => {
     setError(null);
@@ -91,17 +85,13 @@ export default function ChallengePage() {
       });
       streamRef.current = stream;
       if (liveVideoRef.current) liveVideoRef.current.srcObject = stream;
-      // Check hardware zoom support
+      // No zoom UI — always pin the camera to its native minimum zoom (widest
+      // FoV) so it never starts pre-cropped by whatever the device defaults to.
       const track = stream.getVideoTracks()[0];
       const caps  = (track?.getCapabilities?.() ?? {}) as Record<string, unknown> & { zoom?: { min: number; max: number } };
-      const zoomRange = caps.zoom ? { min: caps.zoom.min, max: caps.zoom.max } : null;
-      setHwZoomRange(zoomRange);
-      setZoom(1);
-      // Force hardware zoom to its native minimum (widest FoV) so "1x" is never
-      // pre-cropped by whatever zoom level the device happened to power on with.
-      if (zoomRange) {
+      if (caps.zoom) {
         (track as MediaStreamTrack & { applyConstraints: (c: object) => Promise<void> })
-          .applyConstraints({ advanced: [{ zoom: zoomRange.min }] })
+          .applyConstraints({ advanced: [{ zoom: caps.zoom.min }] })
           .catch((e: unknown) => console.warn("[zoom] reset to min failed:", e));
       }
       setCaptureState("ready");
@@ -120,20 +110,6 @@ export default function ChallengePage() {
     setVideoAspect(video.videoWidth / video.videoHeight);
   }, []);
 
-  // ── Hardware zoom via applyConstraints ────────────────────────────────────────
-  // Runs whenever zoom state changes. UI zoom 1x always maps to the hardware
-  // minimum (widest FoV) — never left at whatever the device happened to default
-  // to. UI zoom > 1x is mapped proportionally into the hardware's own range.
-  useEffect(() => {
-    const track = streamRef.current?.getVideoTracks()[0];
-    if (!track || !hwZoomRange) return;
-    const { min, max } = hwZoomRange;
-    const hwZoom = zoom <= 1 ? min : Math.min(max, min + (zoom - 1) * (max - min) / 2);
-    (track as MediaStreamTrack & { applyConstraints: (c: object) => Promise<void> })
-      .applyConstraints({ advanced: [{ zoom: hwZoom }] })
-      .catch((e: unknown) => console.warn("[zoom] applyConstraints:", e));
-  }, [zoom, hwZoomRange]);
-
   // ── Flip camera ───────────────────────────────────────────────────────────────
   const flipCamera = useCallback(() => {
     const next: FacingMode = facingMode === "user" ? "environment" : "user";
@@ -142,7 +118,6 @@ export default function ChallengePage() {
   }, [facingMode, orientation, startCamera]);
 
   // ── Orientation: apply + restart the stream if it actually changed ───────────
-  // Shared by physical device rotation (auto) and the manual toggle button.
   // Refs (not state) back this so the rotation listener below can be registered
   // exactly once without ever reading stale facingMode/captureState/orientation.
   const orientationRef  = useRef<Orientation>("portrait");
@@ -161,17 +136,11 @@ export default function ChallengePage() {
     }
   }, [startCamera]);
 
-  // Toggles relative to the ACTUAL measured stream shape (videoAspect), not the
-  // last-requested orientation — the two can briefly disagree (e.g. right after
-  // a device rotation, before the new stream's metadata has loaded), and the
-  // button must always reflect what's really on screen right now.
-  const toggleOrientation = useCallback(() => {
-    applyOrientation(videoAspect < 1 ? "landscape" : "portrait");
-  }, [videoAspect, applyOrientation]);
-
   // ── Auto-detect physical device rotation ──────────────────────────────────────
   // Keeps the requested camera stream orientation in sync with how the phone is
   // actually being held — portrait phone → portrait stream, and vice versa.
+  // Restarting mid-recording is guarded against inside applyOrientation itself
+  // (it only restarts when captureState is "ready").
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mql = window.matchMedia("(orientation: portrait)");
@@ -180,39 +149,6 @@ export default function ChallengePage() {
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
   }, [applyOrientation]);
-
-  // ── Pinch gesture handlers ────────────────────────────────────────────────────
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      pinchStartRef.current = Math.hypot(dx, dy);
-    }
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length !== 2 || pinchStartRef.current === 0) return;
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.hypot(dx, dy);
-    const scale = dist / pinchStartRef.current;
-    setZoom((prev) => Math.max(0.5, Math.min(3, prev * scale)));
-    pinchStartRef.current = dist;
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    pinchStartRef.current = 0;
-  }, []);
-
-  // ── Combined touch end: pinch reset + double-tap to reset zoom ───────────────
-  const lastTapRef = useRef(0);
-  const handleDoubleTap = useCallback((e: React.TouchEvent) => {
-    pinchStartRef.current = 0;
-    if (e.changedTouches.length !== 1) return;
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) setZoom(1);
-    lastTapRef.current = now;
-  }, []);
 
   // ── File upload ───────────────────────────────────────────────────────────────
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -405,7 +341,6 @@ export default function ChallengePage() {
     rawBlobRef.current = null;
     setElapsed(0);
     setError(null);
-    setZoom(1);
     startCamera(facingMode, orientation);
   }, [previewUrl, facingMode, orientation, startCamera]);
 
@@ -509,14 +444,8 @@ export default function ChallengePage() {
   const isWatermarking = captureState === "watermarking";
   const isPreview      = captureState === "preview";
 
-  // ── Live video CSS: mirror + zoom ──────────────────────────────────────────────
-  // CSS scale is only used as a fallback digital zoom when the device has no
-  // hardware zoom capability — otherwise the hw zoom effect above already does
-  // the zooming, and stacking CSS scale on top would double-zoom the image.
-  const videoTransform = [
-    facingMode === "user" ? "scaleX(-1)" : "",
-    !hwZoomRange && zoom !== 1 ? `scale(${zoom})` : "",
-  ].filter(Boolean).join(" ") || "none";
+  // ── Live video CSS: mirror the front camera only ──────────────────────────────
+  const videoTransform = facingMode === "user" ? "scaleX(-1)" : "none";
 
   // object-contain guarantees the full camera FoV is always visible — it never
   // crops, unlike object-cover, which was cropping hard whenever the actual
@@ -527,12 +456,7 @@ export default function ChallengePage() {
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="fixed inset-0 z-40 overflow-hidden bg-black"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleDoubleTap}
-    >
+    <div className="fixed inset-0 z-40 overflow-hidden bg-black">
       {/* ── Hidden file input ─────────────────────────────────────────────── */}
       <input
         ref={fileInputRef}
@@ -666,18 +590,7 @@ export default function ChallengePage() {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
-          ZOOM indicator — shown during recording when zoom > 1
-      ════════════════════════════════════════════════════════════════════ */}
-      {isRecording && zoom !== 1 && (
-        <div className="absolute left-4 top-1/2 z-20 -translate-y-1/2">
-          <div className="rounded-full bg-black/60 px-3 py-1.5 font-mono text-sm font-bold text-white backdrop-blur-sm">
-            {zoom.toFixed(1)}×
-          </div>
-        </div>
-      )}
-
-      {/* ════════════════════════════════════════════════════════════════════
-          TOP BAR — back / flip / orientation / watermark ID
+          TOP BAR — back / flip / watermark ID
       ════════════════════════════════════════════════════════════════════ */}
       {(isLive || isPreview) && !isRecording && (
         <div
@@ -701,50 +614,17 @@ export default function ChallengePage() {
             )}
           </button>
 
-          {/* Right-side controls when ready */}
+          {/* Flip camera (ready) */}
           {captureState === "ready" && (
-            <div className="flex items-center gap-2">
-              {/* Orientation toggle — label/icon show the orientation tapping will
-                  SWITCH TO, derived from the ACTUALLY MEASURED stream shape
-                  (videoAspect) rather than the last-requested orientation state,
-                  so it always matches what's really on screen right now. */}
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  onClick={toggleOrientation}
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-                  aria-label={videoAspect < 1 ? "가로로 전환" : "세로로 전환"}
-                  title={videoAspect < 1 ? "가로로 전환" : "세로로 전환"}
-                >
-                  {videoAspect < 1 ? (
-                    /* Currently portrait → tapping switches to landscape */
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <rect x="2" y="5" width="20" height="14" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l3 3-3 3" />
-                    </svg>
-                  ) : (
-                    /* Currently landscape → tapping switches to portrait */
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <rect x="7" y="2" width="10" height="20" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 10l2 2-2 2" />
-                    </svg>
-                  )}
-                </button>
-                <span className="rounded-full bg-black/50 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white/80 backdrop-blur-md">
-                  {videoAspect < 1 ? "가로로 전환" : "세로로 전환"}
-                </span>
-              </div>
-
-              {/* Flip camera */}
-              <button
-                onClick={flipCamera}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-                aria-label="카메라 전환"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                </svg>
-              </button>
-            </div>
+            <button
+              onClick={flipCamera}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+              aria-label="카메라 전환"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
           )}
 
           {/* Watermark ID badge (preview) */}
@@ -755,27 +635,6 @@ export default function ChallengePage() {
               </span>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ════════════════════════════════════════════════════════════════════
-          ZOOM CONTROLS — right side when ready (tap to set level)
-      ════════════════════════════════════════════════════════════════════ */}
-      {captureState === "ready" && (
-        <div className="absolute right-4 top-1/2 z-20 -translate-y-1/2 flex flex-col gap-2">
-          {([0.5, 1, 1.5, 2, 3] as const).map((z) => (
-            <button
-              key={z}
-              onClick={() => setZoom(z)}
-              className={`flex h-10 w-10 items-center justify-center rounded-full font-mono text-xs font-bold transition active:scale-90 ${
-                Math.abs(zoom - z) < 0.15
-                  ? "bg-white text-black shadow-lg"
-                  : "bg-black/50 text-white backdrop-blur-md"
-              }`}
-            >
-              {z}×
-            </button>
-          ))}
         </div>
       )}
 
