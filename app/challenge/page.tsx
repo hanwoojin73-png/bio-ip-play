@@ -37,6 +37,11 @@ export default function ChallengePage() {
   const [captureState,      setCaptureState]      = useState<CaptureState>("idle");
   const [facingMode,        setFacingMode]        = useState<FacingMode>("user");
   const [orientation,       setOrientation]       = useState<Orientation>("portrait");
+  // streamDims: the stream's actual measured resolution (from videoWidth/
+  // videoHeight once metadata loads) — this is the ground truth for whether the
+  // stream orientation matches the screen, since getUserMedia constraints can't
+  // be trusted to produce it on many Android/Chrome combinations.
+  const [streamDims,        setStreamDims]        = useState<{ width: number; height: number } | null>(null);
   const [elapsed,           setElapsed]           = useState(0);
   const [error,             setError]             = useState<string | null>(null);
   const [watermarkProgress, setWatermarkProgress] = useState(0);
@@ -64,19 +69,21 @@ export default function ChallengePage() {
   const watermarkIdRef      = useRef<string>("");
 
   // ── Start camera ─────────────────────────────────────────────────────────────
-  const startCamera = useCallback(async (facing: FacingMode, orient: Orientation = "portrait") => {
+  // Deliberately no width/height/aspectRatio constraints: forcing a specific
+  // resolution via constraints is unreliable across Android/Chrome camera
+  // stacks, and can make a device return an oddly-cropped stream. Left
+  // unconstrained, most devices give back a stream that already matches
+  // however the phone is physically held (e.g. a portrait phone gets a
+  // portrait 720x1280 stream) — actual orientation is verified afterward from
+  // the real videoWidth/videoHeight, not assumed from what was requested.
+  const startCamera = useCallback(async (facing: FacingMode) => {
     setError(null);
     streamRef.current?.getTracks().forEach((t) => t.stop());
+    setStreamDims(null);
     try {
-      const wantPortrait = orient === "portrait";
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: facing,
-          width:       { ideal: wantPortrait ? 1080 : 1920 },
-          height:      { ideal: wantPortrait ? 1920 : 1080 },
-          aspectRatio: { ideal: wantPortrait ? 9 / 16 : 16 / 9 },
-        },
-        audio: { echoCancellation: true, noiseSuppression: true },
+        video: { facingMode: facing },
+        audio: true,
       });
       streamRef.current = stream;
       if (liveVideoRef.current) liveVideoRef.current.srcObject = stream;
@@ -95,12 +102,19 @@ export default function ChallengePage() {
     }
   }, []);
 
+  // ── Measure the stream's real resolution once metadata loads ─────────────────
+  const handleLoadedMetadata = useCallback(() => {
+    const video = liveVideoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    setStreamDims({ width: video.videoWidth, height: video.videoHeight });
+  }, []);
+
   // ── Flip camera ───────────────────────────────────────────────────────────────
   const flipCamera = useCallback(() => {
     const next: FacingMode = facingMode === "user" ? "environment" : "user";
     setFacingMode(next);
-    startCamera(next, orientation);
-  }, [facingMode, orientation, startCamera]);
+    startCamera(next);
+  }, [facingMode, startCamera]);
 
   // ── Orientation: apply + restart the stream if it actually changed ───────────
   // Refs (not state) back this so the rotation listener below can be registered
@@ -112,12 +126,16 @@ export default function ChallengePage() {
   useEffect(() => { captureStateRef.current = captureState; }, [captureState]);
   useEffect(() => { facingModeRef.current   = facingMode;   }, [facingMode]);
 
+  // Restarting on rotation matters even with zero constraints: on some Android
+  // Chrome builds, an unconstrained getUserMedia call's resulting resolution
+  // depends on the device's orientation *at call time*, so a fresh call right
+  // after rotating can yield a differently-shaped stream.
   const applyOrientation = useCallback((next: Orientation) => {
     const changed = orientationRef.current !== next;
     orientationRef.current = next;
     setOrientation(next);
     if (changed && captureStateRef.current === "ready") {
-      startCamera(facingModeRef.current, next);
+      startCamera(facingModeRef.current);
     }
   }, [startCamera]);
 
@@ -166,19 +184,15 @@ export default function ChallengePage() {
       year: "numeric", month: "2-digit", day: "2-digit",
     });
 
-    // Many Android devices ignore the getUserMedia aspectRatio constraint and
-    // just hand back their native widescreen stream (e.g. 1920x1080) no matter
-    // what orientation the phone is actually held in — constraints alone can't
-    // fix this on those devices. So the recording canvas is fixed to the
-    // orientation's target resolution, and every frame is center-cropped from
-    // whatever the stream actually delivers to fill it — the same "cover" math
-    // the live preview uses via CSS object-fit: cover, so preview and output
-    // always show the identical framing.
-    const isPortraitTarget = orientationRef.current === "portrait";
+    // Always record the stream's native resolution as-is — no crop, no scale.
+    // Cropping to force a target aspect throws away field of view and, on a
+    // narrow source, magnifies whatever's left into an extreme close-up. If
+    // the stream doesn't match the screen orientation, that's handled entirely
+    // by the live-preview letterboxing (object-fit: contain) — the recorded
+    // file simply comes out in whatever shape the camera actually delivered.
     const canvas = document.createElement("canvas");
-    canvas.width  = isPortraitTarget ? 1080 : 1920;
-    canvas.height = isPortraitTarget ? 1920 : 1080;
-    const targetAspect = canvas.width / canvas.height;
+    canvas.width  = video.videoWidth  || 1280;
+    canvas.height = video.videoHeight || 720;
     watermarkCanvasRef.current = canvas;
     const ctx = canvas.getContext("2d")!;
 
@@ -222,26 +236,12 @@ export default function ChallengePage() {
     };
 
     const renderFrame = () => {
-      if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
-        const vw = video.videoWidth, vh = video.videoHeight;
-        const videoAspect = vw / vh;
-        // Center-crop the source frame to the target aspect — identical to
-        // what CSS object-fit: cover does for the live preview.
-        let sx, sy, sw, sh;
-        if (videoAspect > targetAspect) {
-          // stream is relatively wider than the target → crop left/right
-          sh = vh;
-          sw = vh * targetAspect;
-          sx = (vw - sw) / 2;
-          sy = 0;
-        } else {
-          // stream is relatively taller than the target → crop top/bottom
-          sw = vw;
-          sh = vw / targetAspect;
-          sx = 0;
-          sy = (vh - sh) / 2;
+      if (video.readyState >= 2) {
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width  = video.videoWidth  || 1280;
+          canvas.height = video.videoHeight || 720;
         }
-        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         drawOverlay();
       }
       rafRef.current = requestAnimationFrame(renderFrame);
@@ -331,8 +331,8 @@ export default function ChallengePage() {
     rawBlobRef.current = null;
     setElapsed(0);
     setError(null);
-    startCamera(facingMode, orientation);
-  }, [previewUrl, facingMode, orientation, startCamera]);
+    startCamera(facingMode);
+  }, [previewUrl, facingMode, startCamera]);
 
   // ── Download ───────────────────────────────────────────────────────────────────
   const downloadVideo = useCallback(() => {
@@ -437,6 +437,22 @@ export default function ChallengePage() {
   // ── Live video CSS: mirror the front camera only ──────────────────────────────
   const videoTransform = facingMode === "user" ? "scaleX(-1)" : "none";
 
+  // ── Does the actual stream orientation match how the phone is held? ──────────
+  // This is the ground truth check the whole render depends on: if they match,
+  // it's safe to fill the screen with a small, honest cover-crop; if they don't
+  // (a portrait phone got a landscape stream, or vice versa), cropping further
+  // would blow the framing up into a close-up — so instead the full frame is
+  // shown letterboxed, uncropped, at its own true aspect ratio.
+  const isScreenPortrait = orientation === "portrait";
+  const isStreamPortrait = streamDims ? streamDims.height > streamDims.width : null;
+  const mismatch = isStreamPortrait !== null && isStreamPortrait !== isScreenPortrait;
+
+  const containerAspect = mismatch && streamDims
+    ? streamDims.width / streamDims.height
+    : (isScreenPortrait ? 9 / 16 : 16 / 9);
+
+  const videoFitClass = mismatch ? "object-contain" : "object-cover";
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
@@ -451,16 +467,17 @@ export default function ChallengePage() {
         onChange={handleFileUpload}
       />
 
-      {/* ── Camera viewport — fixed to the target orientation's aspect ratio.
-          The live feed uses object-fit: cover to center-crop into that box,
-          exactly mirroring the crop the recording canvas performs, so preview
-          and recorded output always show the identical framing. ─────────── */}
+      {/* ── Camera viewport ──────────────────────────────────────────────────
+          Orientation matches → fixed 9:16 / 16:9 box, object-cover (small,
+          honest crop). Orientation mismatched → box sized to the stream's own
+          real aspect ratio, object-contain (full FoV, letterboxed, zero crop,
+          zero zoom). ─────────────────────────────────────────────────────── */}
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         style={{
-          aspectRatio: orientation === "landscape" ? "16 / 9" : "9 / 16",
-          width:    orientation === "landscape" ? "100%" : "auto",
-          height:   orientation === "landscape" ? "auto" : "100%",
+          aspectRatio: containerAspect,
+          width:    containerAspect >= 1 ? "100%" : "auto",
+          height:   containerAspect >= 1 ? "auto" : "100%",
           maxWidth:  "100%",
           maxHeight: "100%",
         }}
@@ -471,12 +488,13 @@ export default function ChallengePage() {
           autoPlay
           muted
           playsInline
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
+          onLoadedMetadata={handleLoadedMetadata}
+          className={`absolute inset-0 h-full w-full ${videoFitClass} transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
           style={{ transform: videoTransform, transformOrigin: "center center" }}
         />
 
-        {/* ── Watermarked preview — already exactly the target aspect, so ──
-            object-contain never needs to crop it further ───────────────── */}
+        {/* ── Watermarked preview — the recorded file is the stream's native ──
+            resolution untouched, so object-contain always shows it in full ── */}
         {isPreview && previewUrl && (
           <video
             ref={previewVideoRef}
@@ -487,6 +505,17 @@ export default function ChallengePage() {
           />
         )}
       </div>
+
+      {/* ── DEBUG — actual stream resolution, remove once orientation behavior
+          is confirmed on target devices ─────────────────────────────────── */}
+      {isLive && (
+        <div
+          className="absolute bottom-2 left-2 z-30 rounded bg-black/40 px-1.5 py-0.5 font-mono text-[10px] text-white/50"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        >
+          {streamDims ? `${streamDims.width}x${streamDims.height}${mismatch ? " (mismatch)" : ""}` : "…"}
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════════════════
           IDLE — camera start prompt + file upload
@@ -508,7 +537,7 @@ export default function ChallengePage() {
 
           {/* Camera start */}
           <button
-            onClick={() => startCamera(facingMode, orientation)}
+            onClick={() => startCamera(facingMode)}
             className="flex h-24 w-24 items-center justify-center rounded-full bg-orange-600 shadow-xl shadow-orange-900/60 active:scale-95"
             aria-label="카메라 시작"
           >
