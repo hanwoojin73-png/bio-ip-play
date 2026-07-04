@@ -40,6 +40,10 @@ export default function ChallengePage() {
   const [zoom,              setZoom]              = useState(1);
   // hwZoomRange: set when the camera track supports the zoom constraint natively
   const [hwZoomRange,       setHwZoomRange]       = useState<{ min: number; max: number } | null>(null);
+  // videoAspect: the stream's actual measured width/height ratio (from videoWidth/
+  // videoHeight once metadata loads) — used to size the preview so it always fills
+  // the screen correctly even if a device ignored our aspectRatio constraint.
+  const [videoAspect,       setVideoAspect]       = useState(9 / 16);
   const [elapsed,           setElapsed]           = useState(0);
   const [error,             setError]             = useState<string | null>(null);
   const [watermarkProgress, setWatermarkProgress] = useState(0);
@@ -70,17 +74,18 @@ export default function ChallengePage() {
   const pinchStartRef = useRef(0);
 
   // ── Start camera ─────────────────────────────────────────────────────────────
-  const startCamera = useCallback(async (facing: FacingMode) => {
+  const startCamera = useCallback(async (facing: FacingMode, orient: Orientation = "portrait") => {
     setError(null);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     try {
-      const isPortrait = typeof window !== "undefined" && window.innerHeight >= window.innerWidth;
+      const wantPortrait = orient === "portrait";
+      setVideoAspect(wantPortrait ? 9 / 16 : 16 / 9); // best guess until real metadata loads
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: facing,
-          width:       { ideal: isPortrait ? 720  : 1280 },
-          height:      { ideal: isPortrait ? 1280 : 720  },
-          aspectRatio: { ideal: isPortrait ? 9 / 16 : 16 / 9 },
+          width:       { ideal: wantPortrait ? 1080 : 1920 },
+          height:      { ideal: wantPortrait ? 1920 : 1080 },
+          aspectRatio: { ideal: wantPortrait ? 9 / 16 : 16 / 9 },
         },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
@@ -105,6 +110,16 @@ export default function ChallengePage() {
     }
   }, []);
 
+  // ── Track the stream's real aspect ratio ──────────────────────────────────────
+  // Some Android devices ignore the aspectRatio constraint entirely, so the
+  // preview must always be sized from what the stream actually reports, not
+  // from what we asked for.
+  const handleLoadedMetadata = useCallback(() => {
+    const video = liveVideoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    setVideoAspect(video.videoWidth / video.videoHeight);
+  }, []);
+
   // ── Hardware zoom via applyConstraints ────────────────────────────────────────
   // Runs whenever zoom state changes. UI zoom 1x always maps to the hardware
   // minimum (widest FoV) — never left at whatever the device happened to default
@@ -123,13 +138,44 @@ export default function ChallengePage() {
   const flipCamera = useCallback(() => {
     const next: FacingMode = facingMode === "user" ? "environment" : "user";
     setFacingMode(next);
-    startCamera(next);
-  }, [facingMode, startCamera]);
+    startCamera(next, orientation);
+  }, [facingMode, orientation, startCamera]);
 
-  // ── Orientation toggle ────────────────────────────────────────────────────────
+  // ── Orientation: apply + restart the stream if it actually changed ───────────
+  // Shared by physical device rotation (auto) and the manual toggle button.
+  // Refs (not state) back this so the rotation listener below can be registered
+  // exactly once without ever reading stale facingMode/captureState/orientation.
+  const orientationRef  = useRef<Orientation>("portrait");
+  const captureStateRef = useRef<CaptureState>("idle");
+  const facingModeRef   = useRef<FacingMode>("user");
+  useEffect(() => { orientationRef.current  = orientation;  }, [orientation]);
+  useEffect(() => { captureStateRef.current = captureState; }, [captureState]);
+  useEffect(() => { facingModeRef.current   = facingMode;   }, [facingMode]);
+
+  const applyOrientation = useCallback((next: Orientation) => {
+    const changed = orientationRef.current !== next;
+    orientationRef.current = next;
+    setOrientation(next);
+    if (changed && captureStateRef.current === "ready") {
+      startCamera(facingModeRef.current, next);
+    }
+  }, [startCamera]);
+
   const toggleOrientation = useCallback(() => {
-    setOrientation((o) => (o === "portrait" ? "landscape" : "portrait"));
-  }, []);
+    applyOrientation(orientationRef.current === "portrait" ? "landscape" : "portrait");
+  }, [applyOrientation]);
+
+  // ── Auto-detect physical device rotation ──────────────────────────────────────
+  // Keeps the requested camera stream orientation in sync with how the phone is
+  // actually being held — portrait phone → portrait stream, and vice versa.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(orientation: portrait)");
+    applyOrientation(mql.matches ? "portrait" : "landscape");
+    const onChange = (e: MediaQueryListEvent) => applyOrientation(e.matches ? "portrait" : "landscape");
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [applyOrientation]);
 
   // ── Pinch gesture handlers ────────────────────────────────────────────────────
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -195,9 +241,18 @@ export default function ChallengePage() {
       year: "numeric", month: "2-digit", day: "2-digit",
     });
 
+    // Some Android devices ignore the aspectRatio constraint and hand back a
+    // stream shaped the opposite way from how the phone is actually being held
+    // (e.g. a landscape frame while held portrait). Detect that mismatch here
+    // and rotate 90° while drawing so the recorded file still comes out in the
+    // orientation the phone was physically held in.
+    const wantPortrait   = orientationRef.current === "portrait";
+    const actualPortrait = video.videoHeight >= video.videoWidth;
+    const needsRotate    = !!video.videoWidth && !!video.videoHeight && actualPortrait !== wantPortrait;
+
     const canvas = document.createElement("canvas");
-    canvas.width  = video.videoWidth  || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width  = (needsRotate ? video.videoHeight : video.videoWidth)  || 1280;
+    canvas.height = (needsRotate ? video.videoWidth  : video.videoHeight) || 720;
     watermarkCanvasRef.current = canvas;
     const ctx = canvas.getContext("2d")!;
 
@@ -242,11 +297,21 @@ export default function ChallengePage() {
 
     const renderFrame = () => {
       if (video.readyState >= 2) {
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width  = video.videoWidth  || 1280;
-          canvas.height = video.videoHeight || 720;
+        const targetW = (needsRotate ? video.videoHeight : video.videoWidth)  || 1280;
+        const targetH = (needsRotate ? video.videoWidth  : video.videoHeight) || 720;
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width  = targetW;
+          canvas.height = targetH;
         }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (needsRotate) {
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate(Math.PI / 2);
+          ctx.drawImage(video, -video.videoWidth / 2, -video.videoHeight / 2, video.videoWidth, video.videoHeight);
+          ctx.restore();
+        } else {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
         drawOverlay();
       }
       rafRef.current = requestAnimationFrame(renderFrame);
@@ -337,8 +402,8 @@ export default function ChallengePage() {
     setElapsed(0);
     setError(null);
     setZoom(1);
-    startCamera(facingMode);
-  }, [previewUrl, facingMode, startCamera]);
+    startCamera(facingMode, orientation);
+  }, [previewUrl, facingMode, orientation, startCamera]);
 
   // ── Download ───────────────────────────────────────────────────────────────────
   const downloadVideo = useCallback(() => {
@@ -454,8 +519,6 @@ export default function ChallengePage() {
   // stream aspect ratio didn't exactly match the viewport.
   const videoClass = "absolute inset-0 h-full w-full object-contain";
 
-  const previewAspectRatio = orientation === "landscape" ? "16 / 9" : "9 / 16";
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
@@ -475,13 +538,14 @@ export default function ChallengePage() {
         onChange={handleFileUpload}
       />
 
-      {/* ── Camera viewport — fixed aspect ratio, letterboxed, never cropped ── */}
+      {/* ── Camera viewport — sized from the stream's real aspect ratio, so it ──
+          always fills the screen as much as possible with zero cropping ────── */}
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         style={{
-          aspectRatio: previewAspectRatio,
-          width:    orientation === "landscape" ? "100%" : "auto",
-          height:   orientation === "landscape" ? "auto" : "100%",
+          aspectRatio: videoAspect,
+          width:    videoAspect >= 1 ? "100%" : "auto",
+          height:   videoAspect >= 1 ? "auto" : "100%",
           maxWidth:  "100%",
           maxHeight: "100%",
         }}
@@ -492,6 +556,7 @@ export default function ChallengePage() {
           autoPlay
           muted
           playsInline
+          onLoadedMetadata={handleLoadedMetadata}
           className={`${videoClass} transition-opacity duration-200 ${isLive ? "opacity-100" : "opacity-0"}`}
           style={{ transform: videoTransform, transformOrigin: "center center" }}
         />
@@ -528,7 +593,7 @@ export default function ChallengePage() {
 
           {/* Camera start */}
           <button
-            onClick={() => startCamera(facingMode)}
+            onClick={() => startCamera(facingMode, orientation)}
             className="flex h-24 w-24 items-center justify-center rounded-full bg-orange-600 shadow-xl shadow-orange-900/60 active:scale-95"
             aria-label="카메라 시작"
           >
