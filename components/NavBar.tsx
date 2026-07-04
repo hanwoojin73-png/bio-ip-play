@@ -68,7 +68,7 @@ export default function NavBar() {
             <span className="font-mono text-base font-bold tracking-tight text-white">
               BIO-IP
             </span>
-            <span className="rounded-md bg-violet-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">
+            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">
               play
             </span>
           </Link>
@@ -127,7 +127,7 @@ export default function NavBar() {
             onClick={() => setOpen(false)}
           >
             <span className="font-mono text-sm font-bold text-white">BIO-IP</span>
-            <span className="rounded-md bg-violet-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">
+            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">
               play
             </span>
           </Link>
@@ -155,7 +155,7 @@ export default function NavBar() {
                 }`}
               >
                 {isActive(href) && (
-                  <span className="mr-2.5 h-1.5 w-1.5 rounded-full bg-violet-400 flex-shrink-0" />
+                  <span className="mr-2.5 h-1.5 w-1.5 rounded-full bg-orange-400 flex-shrink-0" />
                 )}
                 {label}
               </Link>

@@ -53,8 +53,8 @@ const PAYMENT_STATUS_META: Record<PaymentStatus, { label: string; cls: string }>
 
 const CURRENCY_CLS: Record<PaymentCurrency, string> = {
   USDC:  "text-blue-400",
-  ETH:   "text-violet-400",
-  MATIC: "text-purple-400",
+  ETH:   "text-orange-400",
+  MATIC: "text-orange-400",
   USD:   "text-emerald-400",
 };
 
@@ -392,8 +392,8 @@ export default function AdminDashboard({
       <header className="sticky top-0 z-40 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3.5">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-700/50 bg-violet-900/40">
-              <svg className="h-4 w-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-orange-700/50 bg-orange-900/40">
+              <svg className="h-4 w-4 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
               </svg>
             </div>
@@ -476,9 +476,9 @@ export default function AdminDashboard({
               label="총 Bio-IP 자산"
               value={stats.totalAssets.toLocaleString()}
               sub="등록된 전체 자산"
-              accentCls="bg-violet-900/40 border border-violet-800/40"
+              accentCls="bg-orange-900/40 border border-orange-800/40"
               icon={
-                <svg className="h-5 w-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <svg className="h-5 w-5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
                 </svg>
               }

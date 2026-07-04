@@ -73,9 +73,9 @@ const FEATURES: Feature[] = [
     title:       "생체 신호 추출",
     badge:       "3-Layer",
     description: "시각(얼굴 기하·표정), 음성(피치·음색·리듬), 다이내믹스(제스처·모션 템포)를 동시에 캡처해 고유한 바이오 시그니처를 생성합니다.",
-    accent:      "from-violet-500 to-purple-600",
-    badgeClass:  "bg-violet-900/60 text-violet-300",
-    borderHover: "hover:border-violet-700/60",
+    accent:      "from-orange-500 to-orange-600",
+    badgeClass:  "bg-orange-900/60 text-orange-300",
+    borderHover: "hover:border-orange-700/60",
   },
   {
     id:          "chain",
@@ -100,8 +100,8 @@ const FEATURES: Feature[] = [
 ];
 
 const STATS: Stat[] = [
-  { value: "3",    unit: "레이어",  label: "생체 신호 추출" },
-  { value: "100%", unit: "온체인",  label: "소유권 등록" },
+  { value: "4",    unit: "요소",    label: "초상·표정·몸짓·음성" },
+  { value: "100%", unit: "본인 소유", label: "소유권 등록" },
   { value: "0",    unit: "중개자",  label: "직접 로열티 정산" },
 ];
 
@@ -152,7 +152,7 @@ export default function LandingPage() {
           aria-hidden
           className="pointer-events-none absolute inset-0 flex items-center justify-center"
         >
-          <div className="h-[600px] w-[600px] rounded-full bg-violet-600/10 blur-[120px]" />
+          <div className="h-[600px] w-[600px] rounded-full bg-orange-600/10 blur-[120px]" />
         </div>
 
         {/* Dot grid */}
@@ -167,31 +167,26 @@ export default function LandingPage() {
 
         <div className="relative z-10 flex flex-col items-center gap-6 max-w-3xl">
           {/* Protocol badge */}
-          <span className="inline-flex items-center gap-2 rounded-full border border-violet-700/50 bg-violet-950/60 px-4 py-1.5 text-xs font-semibold text-violet-300 backdrop-blur-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
+          <span className="inline-flex items-center gap-2 rounded-full border border-orange-700/50 bg-orange-950/60 px-4 py-1.5 text-xs font-semibold text-orange-300 backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
             Biometric IP Protocol · Beta
           </span>
 
           {/* Headline */}
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
-            놀면서 관리하는
-            <br />
-            <span className="bg-gradient-to-r from-violet-400 via-purple-400 to-blue-400 bg-clip-text text-transparent">
-              나의 BIO-IP
-            </span>
+            <span className="text-orange-500">PLAY</span> your Bio-IP
           </h1>
 
           {/* Subtitle */}
           <p className="max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-            챌린지를 즐기는 순간, 당신만의 생체 서명이
-            블록체인에 새겨집니다.
+            나의 초상, 표정, 몸짓, 음성 — 당신의 모든 PLAY가 자산이 됩니다
           </p>
 
           {/* CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/challenge"
-              className="flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-95"
+              className="flex items-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-orange-500 active:scale-95"
             >
               챌린지 시작
               <IconArrowRight />
@@ -211,7 +206,7 @@ export default function LandingPage() {
             <div key={stat?.label ?? ""} className="text-center">
               <p className="text-3xl font-extrabold text-white">
                 {stat?.value ?? "—"}
-                <span className="ml-1 text-lg font-semibold text-violet-400">
+                <span className="ml-1 text-lg font-semibold text-orange-400">
                   {stat?.unit ?? ""}
                 </span>
               </p>
@@ -279,7 +274,7 @@ export default function LandingPage() {
               <li key={s?.step ?? i} className="flex gap-5">
                 {/* Step indicator + connector */}
                 <div className="flex flex-col items-center">
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-sm font-bold text-violet-400">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-sm font-bold text-orange-400">
                     {s?.step ?? ""}
                   </div>
                   {i < (STEPS?.length ?? 0) - 1 && (
@@ -298,7 +293,7 @@ export default function LandingPage() {
                   {s?.href ? (
                     <Link
                       href={s.href}
-                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-400 transition hover:text-violet-300"
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-orange-400 transition hover:text-orange-300"
                     >
                       {s?.cta ?? ""} <IconArrowRight />
                     </Link>
@@ -312,7 +307,7 @@ export default function LandingPage() {
 
       {/* ── CTA Banner ── */}
       <section className="border-t border-zinc-800 px-6 py-16">
-        <div className="mx-auto max-w-2xl rounded-2xl border border-violet-800/40 bg-gradient-to-br from-violet-950/60 to-zinc-900 px-8 py-10 text-center">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-orange-800/40 bg-gradient-to-br from-orange-950/60 to-zinc-900 px-8 py-10 text-center">
           <h2 className="text-xl font-bold sm:text-2xl">
             지금 바로 내 생체 IP를 등록하세요
           </h2>
@@ -321,7 +316,7 @@ export default function LandingPage() {
           </p>
           <Link
             href="/challenge"
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-95"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-orange-500 active:scale-95"
           >
             챌린지 시작 <IconArrowRight />
           </Link>

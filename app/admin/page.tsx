@@ -117,8 +117,8 @@ function LoginPage({ loginError }: { loginError?: boolean }) {
       <div className="w-full max-w-sm space-y-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-8">
         {/* Logo */}
         <div className="space-y-2 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-700/50 bg-violet-900/40">
-            <svg className="h-7 w-7 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-orange-700/50 bg-orange-900/40">
+            <svg className="h-7 w-7 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
             </svg>
           </div>
@@ -144,12 +144,12 @@ function LoginPage({ loginError }: { loginError?: boolean }) {
               required
               autoFocus
               placeholder="••••••••"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3.5 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-orange-600 focus:ring-1 focus:ring-orange-600"
             />
           </div>
           <button
             type="submit"
-            className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-[0.98]"
+            className="w-full rounded-xl bg-orange-600 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-500 active:scale-[0.98]"
           >
             로그인
           </button>

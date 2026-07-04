@@ -34,7 +34,7 @@ interface PurchaseModalProps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LAYER_META: Record<Layer, { label: string; cls: string }> = {
-  visual:   { label: "시각",      cls: "bg-violet-900/60 text-violet-300" },
+  visual:   { label: "시각",      cls: "bg-orange-900/60 text-orange-300" },
   vocal:    { label: "음성",      cls: "bg-blue-900/60 text-blue-300" },
   dynamics: { label: "다이내믹스", cls: "bg-emerald-900/60 text-emerald-300" },
 };
@@ -205,12 +205,12 @@ function StepTerms({
       </div>
 
       {/* Agreement checkbox */}
-      <label className="flex cursor-pointer select-none items-start gap-3 rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 py-3 transition hover:border-violet-700/60">
+      <label className="flex cursor-pointer select-none items-start gap-3 rounded-xl border border-zinc-700 bg-zinc-900/60 px-4 py-3 transition hover:border-orange-700/60">
         <input
           type="checkbox"
           checked={agreed}
           onChange={(e) => setAgreed(e.target.checked)}
-          className="mt-0.5 h-4 w-4 flex-shrink-0 accent-violet-500 cursor-pointer"
+          className="mt-0.5 h-4 w-4 flex-shrink-0 accent-orange-500 cursor-pointer"
         />
         <span className="text-sm leading-relaxed text-zinc-300">
           위 라이선스 조건을 모두 읽었으며, 사용 범위와 로열티 지급 의무에 동의합니다.
@@ -225,7 +225,7 @@ function StepTerms({
         disabled={!agreed}
         className={`w-full rounded-xl py-3 text-sm font-semibold text-white transition active:scale-[0.98] ${
           agreed
-            ? "bg-violet-600 hover:bg-violet-500"
+            ? "bg-orange-600 hover:bg-orange-500"
             : "cursor-not-allowed bg-zinc-800 text-zinc-600"
         }`}
       >
@@ -294,20 +294,20 @@ function StepPayment({
             onClick={() => onSelect(key)}
             className={`w-full rounded-xl border px-4 py-4 text-left transition ${
               method === key
-                ? "border-violet-500 bg-violet-950/40 ring-1 ring-violet-500/40"
+                ? "border-orange-500 bg-orange-950/40 ring-1 ring-orange-500/40"
                 : "border-zinc-700 bg-zinc-900 hover:border-zinc-600"
             }`}
           >
             <div className="flex items-center gap-4">
               {/* Radio dot */}
               <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition ${
-                method === key ? "border-violet-500 bg-violet-600" : "border-zinc-600"
+                method === key ? "border-orange-500 bg-orange-600" : "border-zinc-600"
               }`}>
                 {method === key && <div className="h-2 w-2 rounded-full bg-white" />}
               </div>
 
               {/* Icon */}
-              <div className={`flex-shrink-0 ${method === key ? "text-violet-300" : "text-zinc-400"}`}>
+              <div className={`flex-shrink-0 ${method === key ? "text-orange-300" : "text-zinc-400"}`}>
                 {icon}
               </div>
 
@@ -359,7 +359,7 @@ function StepPayment({
           disabled={!method}
           className={`flex-[2] rounded-xl py-3 text-sm font-semibold text-white transition active:scale-[0.98] ${
             method
-              ? "bg-violet-600 hover:bg-violet-500"
+              ? "bg-orange-600 hover:bg-orange-500"
               : "cursor-not-allowed bg-zinc-800 text-zinc-600"
           }`}
         >
@@ -419,7 +419,7 @@ function StepConfirm({
                 type="text"
                 placeholder="카드 번호  0000 0000 0000 0000"
                 maxLength={19}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-orange-600 focus:ring-1 focus:ring-orange-600"
                 onChange={(e) => {
                   const raw = e.target.value.replace(/\D/g, "").slice(0, 16);
                   e.target.value = raw.replace(/(.{4})/g, "$1 ").trim();
@@ -431,7 +431,7 @@ function StepConfirm({
                 type="text"
                 placeholder="MM / YY"
                 maxLength={5}
-                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-orange-600 focus:ring-1 focus:ring-orange-600"
                 onChange={(e) => {
                   const raw = e.target.value.replace(/\D/g, "").slice(0, 4);
                   e.target.value = raw.length > 2 ? `${raw.slice(0,2)} / ${raw.slice(2)}` : raw;
@@ -441,7 +441,7 @@ function StepConfirm({
                 type="password"
                 placeholder="CVV"
                 maxLength={4}
-                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-orange-600 focus:ring-1 focus:ring-orange-600"
               />
             </div>
           </div>
@@ -509,10 +509,10 @@ function StepProcessing({ method }: { method: PaymentMethod }) {
     <div className="flex flex-col items-center gap-6 py-4">
       {/* Animated rings */}
       <div className="relative flex items-center justify-center">
-        <div className="absolute h-24 w-24 animate-ping rounded-full border-2 border-violet-500/30" />
-        <div className="absolute h-16 w-16 animate-pulse rounded-full border border-violet-600/40" />
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-700/40">
-          <Spinner className="h-7 w-7 text-violet-300" />
+        <div className="absolute h-24 w-24 animate-ping rounded-full border-2 border-orange-500/30" />
+        <div className="absolute h-16 w-16 animate-pulse rounded-full border border-orange-600/40" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-700/40">
+          <Spinner className="h-7 w-7 text-orange-300" />
         </div>
       </div>
 
@@ -520,17 +520,17 @@ function StepProcessing({ method }: { method: PaymentMethod }) {
         {steps.map((label, i) => (
           <div key={label} className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all ${
             i < current  ? "opacity-50" :
-            i === current ? "bg-violet-950/40 border border-violet-800/60" : "opacity-20"
+            i === current ? "bg-orange-950/40 border border-orange-800/60" : "opacity-20"
           }`}>
             <span className="flex-shrink-0">
               {i < current
                 ? <CheckCircle className="h-4 w-4 text-emerald-400" />
                 : i === current
-                  ? <Spinner className="h-4 w-4 text-violet-400" />
+                  ? <Spinner className="h-4 w-4 text-orange-400" />
                   : <div className="h-4 w-4 rounded-full border border-zinc-700" />
               }
             </span>
-            <span className={`text-sm ${i === current ? "text-violet-200 font-medium" : "text-zinc-500"}`}>
+            <span className={`text-sm ${i === current ? "text-orange-200 font-medium" : "text-zinc-500"}`}>
               {label}
             </span>
           </div>
@@ -631,7 +631,7 @@ function StepSuccess({
       <div className="flex w-full flex-col gap-2.5">
         <a
           href="/my-bio-ip"
-          className="w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white text-center transition hover:bg-violet-500 active:scale-[0.98]"
+          className="w-full rounded-xl bg-orange-600 py-3 text-sm font-semibold text-white text-center transition hover:bg-orange-500 active:scale-[0.98]"
         >
           My Bio-IP에서 확인하기
         </a>
@@ -661,11 +661,11 @@ function ProgressBar({ step }: { step: Step }) {
           <div key={key} className="flex flex-1 flex-col items-center gap-1">
             <div className={`h-1 w-full rounded-full transition-all duration-300 ${
               isDone   ? "bg-emerald-500" :
-              isActive ? "bg-violet-500" : "bg-zinc-800"
+              isActive ? "bg-orange-500" : "bg-zinc-800"
             }`} />
             <span className={`text-[10px] font-medium transition-colors ${
               isDone   ? "text-emerald-500" :
-              isActive ? "text-violet-400" : "text-zinc-600"
+              isActive ? "text-orange-400" : "text-zinc-600"
             }`}>
               {label}
             </span>

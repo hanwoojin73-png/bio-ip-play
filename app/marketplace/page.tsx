@@ -41,7 +41,7 @@ const ASSETS: MarketplaceAsset[] = [
     title: "Han Visual & Vocal Identity v1",
     ownerName: "Han Ujin",
     ownerInitials: "HU",
-    avatarColor: "bg-violet-600",
+    avatarColor: "bg-orange-600",
     layers: ["visual", "vocal"],
     royaltyRateBps: 1000,
     usageCount: 248,
@@ -144,7 +144,7 @@ const ASSETS: MarketplaceAsset[] = [
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const LAYER_META: Record<Layer, { label: string; className: string }> = {
-  visual:   { label: "시각",      className: "bg-violet-900/60 text-violet-300" },
+  visual:   { label: "시각",      className: "bg-orange-900/60 text-orange-300" },
   vocal:    { label: "음성",      className: "bg-blue-900/60 text-blue-300" },
   dynamics: { label: "다이내믹스", className: "bg-emerald-900/60 text-emerald-300" },
 };
@@ -167,7 +167,7 @@ function formatDate(iso: string) {
 
 // ─── Waveform SVG ──────────────────────────────────────────────────────────────
 
-function Waveform({ data, height = 48, color = "#7c3aed" }: { data: number[]; height?: number; color?: string }) {
+function Waveform({ data, height = 48, color = "#F97316" }: { data: number[]; height?: number; color?: string }) {
   const barW = 3;
   const gap  = 2;
   const total = data.length;
@@ -305,7 +305,7 @@ function DetailModal({ asset, onClose, onPurchase }: { asset: MarketplaceAsset; 
           {/* Purchase CTA */}
           <button
             onClick={() => { onPurchase(asset); onClose(); }}
-            className="w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-95"
+            className="w-full rounded-xl bg-orange-600 py-3 text-sm font-semibold text-white transition hover:bg-orange-500 active:scale-95"
           >
             라이선스 구매 · {bpsToPercent(asset.royaltyRateBps)}% 로열티
           </button>
@@ -335,7 +335,7 @@ function AssetCard({ asset, onClick }: { asset: MarketplaceAsset; onClick: () =>
       </div>
 
       {/* Title */}
-      <h3 className="text-sm font-semibold leading-snug text-white group-hover:text-violet-300 transition-colors line-clamp-2">
+      <h3 className="text-sm font-semibold leading-snug text-white group-hover:text-orange-300 transition-colors line-clamp-2">
         {asset.title}
       </h3>
 
@@ -346,7 +346,7 @@ function AssetCard({ asset, onClick }: { asset: MarketplaceAsset; onClick: () =>
 
       {/* Mini waveform */}
       <div className="rounded-lg bg-zinc-950/60 px-3 py-2">
-        <Waveform data={asset.waveform} height={36} color="#7c3aed" />
+        <Waveform data={asset.waveform} height={36} color="#F97316" />
       </div>
 
       {/* Stats */}
@@ -366,7 +366,7 @@ function AssetCard({ asset, onClick }: { asset: MarketplaceAsset; onClick: () =>
       {/* Button */}
       <button
         onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="w-full rounded-xl bg-violet-700/60 py-2 text-xs font-semibold text-violet-200 transition group-hover:bg-violet-600 group-hover:text-white"
+        className="w-full rounded-xl bg-orange-700/60 py-2 text-xs font-semibold text-orange-200 transition group-hover:bg-orange-600 group-hover:text-white"
       >
         라이선스 구매
       </button>
@@ -414,7 +414,7 @@ function WalletBar() {
   return (
     <button
       onClick={() => connect({ connector: connectors[0] })}
-      className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500"
+      className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-500"
     >
       <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
         <path d="M2.273 5.625A4.483 4.483 0 015.25 4.5h13.5c1.141 0 2.183.425 2.977 1.125A3 3 0 0018.75 3H5.25a3 3 0 00-2.977 2.625zM2.273 8.625A4.483 4.483 0 015.25 7.5h13.5c1.141 0 2.183.425 2.977 1.125A3 3 0 0018.75 6H5.25a3 3 0 00-2.977 2.625zM5.25 9a3 3 0 00-3 3v6a3 3 0 003 3h13.5a3 3 0 003-3v-6a3 3 0 00-3-3H5.25zm7.5 4.5a.75.75 0 000 1.5h3a.75.75 0 000-1.5h-3z" />
@@ -542,7 +542,7 @@ function PurchaseFlowModal({
               )}
               <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs">
                 <span className="text-zinc-500">네트워크</span>
-                <span className="text-violet-300">Polygon Amoy{isMock ? " (mock)" : ""}</span>
+                <span className="text-orange-300">Polygon Amoy{isMock ? " (mock)" : ""}</span>
               </div>
 
               {error && (
@@ -560,7 +560,7 @@ function PurchaseFlowModal({
                     scope:    SCOPE_ENUM[asset.scope],
                   })
                 }
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-violet-600 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-[0.97]"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-600 text-sm font-semibold text-white transition hover:bg-orange-500 active:scale-[0.97]"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
@@ -573,7 +573,7 @@ function PurchaseFlowModal({
           {/* ── Processing (network switch / signing / pending / saving) ── */}
           {isProcessing && (
             <div className="flex flex-col items-center gap-4 py-4">
-              <svg className="h-10 w-10 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
+              <svg className="h-10 w-10 animate-spin text-orange-400" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
               </svg>
@@ -583,7 +583,7 @@ function PurchaseFlowModal({
                   href={amoyTxUrl(txHash)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-mono text-xs text-violet-400 underline underline-offset-2"
+                  className="font-mono text-xs text-orange-400 underline underline-offset-2"
                 >
                   {txHash.slice(0, 16)}…{txHash.slice(-6)} ↗
                 </a>
@@ -608,7 +608,7 @@ function PurchaseFlowModal({
                   href={amoyTxUrl(txHash)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 rounded-lg border border-violet-700/60 px-3 py-1.5 text-xs text-violet-400 transition hover:border-violet-500"
+                  className="flex items-center gap-1 rounded-lg border border-orange-700/60 px-3 py-1.5 text-xs text-orange-400 transition hover:border-orange-500"
                 >
                   Amoy 익스플로러에서 확인 ↗
                 </a>
@@ -703,7 +703,7 @@ export default function MarketplacePage() {
               placeholder="이름 또는 소유자 검색…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-violet-600 focus:ring-1 focus:ring-violet-600"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 py-2 pl-9 pr-3 text-sm text-white placeholder-zinc-600 outline-none transition focus:border-orange-600 focus:ring-1 focus:ring-orange-600"
             />
           </div>
 
@@ -716,7 +716,7 @@ export default function MarketplacePage() {
                   onClick={() => setCategory(key)}
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                     category === key
-                      ? "bg-violet-600 text-white"
+                      ? "bg-orange-600 text-white"
                       : "border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
                   }`}
                 >
@@ -729,7 +729,7 @@ export default function MarketplacePage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-lg border border-zinc-700 bg-zinc-900 py-1.5 pl-3 pr-8 text-xs text-zinc-300 outline-none transition focus:border-violet-600 appearance-none cursor-pointer"
+              className="rounded-lg border border-zinc-700 bg-zinc-900 py-1.5 pl-3 pr-8 text-xs text-zinc-300 outline-none transition focus:border-orange-600 appearance-none cursor-pointer"
             >
               {SORTS.map(({ key, label }) => (
                 <option key={key} value={key}>{label}</option>
@@ -746,7 +746,7 @@ export default function MarketplacePage() {
             <p className="text-sm text-zinc-500">검색 결과가 없습니다</p>
             <button
               onClick={() => { setQuery(""); setCategory("all"); }}
-              className="text-xs text-violet-400 hover:text-violet-300"
+              className="text-xs text-orange-400 hover:text-orange-300"
             >
               필터 초기화
             </button>

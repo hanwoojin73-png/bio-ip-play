@@ -74,8 +74,14 @@ export default function ChallengePage() {
     setError(null);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     try {
+      const isPortrait = typeof window !== "undefined" && window.innerHeight >= window.innerWidth;
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1080 }, height: { ideal: 1920 }, facingMode: facing },
+        video: {
+          facingMode: facing,
+          width:       { ideal: isPortrait ? 720  : 1280 },
+          height:      { ideal: isPortrait ? 1280 : 720  },
+          aspectRatio: { ideal: isPortrait ? 9 / 16 : 16 / 9 },
+        },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       streamRef.current = stream;
@@ -493,7 +499,7 @@ export default function ChallengePage() {
           {/* Camera start */}
           <button
             onClick={() => startCamera(facingMode)}
-            className="flex h-24 w-24 items-center justify-center rounded-full bg-violet-600 shadow-xl shadow-violet-900/60 active:scale-95"
+            className="flex h-24 w-24 items-center justify-center rounded-full bg-orange-600 shadow-xl shadow-orange-900/60 active:scale-95"
             aria-label="카메라 시작"
           >
             <svg className="h-10 w-10 text-white" viewBox="0 0 24 24" fill="currentColor">
@@ -528,11 +534,11 @@ export default function ChallengePage() {
       ════════════════════════════════════════════════════════════════════ */}
       {isWatermarking && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-7 bg-black px-8">
-          <Spinner className="h-14 w-14 text-violet-400" />
+          <Spinner className="h-14 w-14 text-orange-400" />
           <div className="w-full max-w-xs space-y-3">
             <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
               <div
-                className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                className="h-full rounded-full bg-orange-500 transition-all duration-500"
                 style={{ width: `${Math.max(watermarkProgress, 3)}%` }}
               />
             </div>
@@ -757,7 +763,7 @@ export default function ChallengePage() {
                       onClick={() => setContentType("self")}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-semibold transition-colors ${
                         contentType === "self"
-                          ? "bg-violet-600 text-white shadow-md"
+                          ? "bg-orange-600 text-white shadow-md"
                           : "bg-white/15 text-white/70"
                       }`}
                     >
@@ -767,7 +773,7 @@ export default function ChallengePage() {
                       onClick={() => setContentType("character")}
                       className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-semibold transition-colors ${
                         contentType === "character"
-                          ? "bg-violet-600 text-white shadow-md"
+                          ? "bg-orange-600 text-white shadow-md"
                           : "bg-white/15 text-white/70"
                       }`}
                     >
@@ -778,7 +784,7 @@ export default function ChallengePage() {
 
                 <button
                   onClick={registerBioIP}
-                  className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 text-base font-bold text-white shadow-lg shadow-violet-900/50 active:scale-[0.97]"
+                  className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-orange-600 text-base font-bold text-white shadow-lg shadow-orange-900/50 active:scale-[0.97]"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
@@ -811,7 +817,7 @@ export default function ChallengePage() {
 
             {registerState === "working" && (
               <div className="flex flex-col items-center gap-4 py-6">
-                <Spinner className="h-10 w-10 text-violet-400" />
+                <Spinner className="h-10 w-10 text-orange-400" />
                 <p className="text-sm font-medium text-zinc-300">{registerStep || "Bio-IP 등록 중…"}</p>
               </div>
             )}

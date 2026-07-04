@@ -29,7 +29,7 @@ const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
 
 function Spinner() {
   return (
-    <svg className="h-6 w-6 animate-spin text-violet-400" fill="none" viewBox="0 0 24 24">
+    <svg className="h-6 w-6 animate-spin text-orange-400" fill="none" viewBox="0 0 24 24">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
@@ -334,7 +334,7 @@ function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () 
           )}
           <button
             onClick={() => openLicenseCertificate(asset)}
-            className="rounded-md bg-violet-700/40 px-2.5 py-1.5 text-violet-300 transition hover:bg-violet-700 hover:text-white"
+            className="rounded-md bg-orange-700/40 px-2.5 py-1.5 text-orange-300 transition hover:bg-orange-700 hover:text-white"
           >
             라이선스
           </button>
@@ -390,7 +390,7 @@ function EmptyState() {
       </div>
       <Link
         href="/challenge"
-        className="flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 active:scale-95"
+        className="flex items-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-orange-500 active:scale-95"
       >
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
           <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clipRule="evenodd" />
@@ -480,7 +480,7 @@ export default function MyBioIPPage() {
           </p>
           <Link
             href="/challenge"
-            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500"
+            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-500"
           >
             + 새 자산 등록
           </Link>
