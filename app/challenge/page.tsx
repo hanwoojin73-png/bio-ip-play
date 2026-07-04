@@ -161,9 +161,13 @@ export default function ChallengePage() {
     }
   }, [startCamera]);
 
+  // Toggles relative to the ACTUAL measured stream shape (videoAspect), not the
+  // last-requested orientation — the two can briefly disagree (e.g. right after
+  // a device rotation, before the new stream's metadata has loaded), and the
+  // button must always reflect what's really on screen right now.
   const toggleOrientation = useCallback(() => {
-    applyOrientation(orientationRef.current === "portrait" ? "landscape" : "portrait");
-  }, [applyOrientation]);
+    applyOrientation(videoAspect < 1 ? "landscape" : "portrait");
+  }, [videoAspect, applyOrientation]);
 
   // ── Auto-detect physical device rotation ──────────────────────────────────────
   // Keeps the requested camera stream orientation in sync with how the phone is
@@ -700,17 +704,18 @@ export default function ChallengePage() {
           {/* Right-side controls when ready */}
           {captureState === "ready" && (
             <div className="flex items-center gap-2">
-              {/* Orientation toggle — the icon shown is the orientation tapping will
-                  SWITCH TO (a target hint), not the current orientation. The label
-                  below makes that explicit so it doesn't read as a status readout. */}
+              {/* Orientation toggle — label/icon show the orientation tapping will
+                  SWITCH TO, derived from the ACTUALLY MEASURED stream shape
+                  (videoAspect) rather than the last-requested orientation state,
+                  so it always matches what's really on screen right now. */}
               <div className="flex flex-col items-center gap-1">
                 <button
                   onClick={toggleOrientation}
                   className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-                  aria-label={orientation === "portrait" ? "가로로 전환" : "세로로 전환"}
-                  title={orientation === "portrait" ? "가로로 전환" : "세로로 전환"}
+                  aria-label={videoAspect < 1 ? "가로로 전환" : "세로로 전환"}
+                  title={videoAspect < 1 ? "가로로 전환" : "세로로 전환"}
                 >
-                  {orientation === "portrait" ? (
+                  {videoAspect < 1 ? (
                     /* Currently portrait → tapping switches to landscape */
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <rect x="2" y="5" width="20" height="14" rx="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -725,7 +730,7 @@ export default function ChallengePage() {
                   )}
                 </button>
                 <span className="rounded-full bg-black/50 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white/80 backdrop-blur-md">
-                  {orientation === "portrait" ? "가로로 전환" : "세로로 전환"}
+                  {videoAspect < 1 ? "가로로 전환" : "세로로 전환"}
                 </span>
               </div>
 
