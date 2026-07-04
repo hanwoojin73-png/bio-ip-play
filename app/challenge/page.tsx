@@ -700,27 +700,34 @@ export default function ChallengePage() {
           {/* Right-side controls when ready */}
           {captureState === "ready" && (
             <div className="flex items-center gap-2">
-              {/* Orientation toggle */}
-              <button
-                onClick={toggleOrientation}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-                aria-label={orientation === "portrait" ? "가로 모드" : "세로 모드"}
-                title={orientation === "portrait" ? "가로 모드" : "세로 모드"}
-              >
-                {orientation === "portrait" ? (
-                  /* Portrait → landscape icon */
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <rect x="2" y="5" width="20" height="14" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l3 3-3 3" />
-                  </svg>
-                ) : (
-                  /* Landscape → portrait icon */
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <rect x="7" y="2" width="10" height="20" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 10l2 2-2 2" />
-                  </svg>
-                )}
-              </button>
+              {/* Orientation toggle — the icon shown is the orientation tapping will
+                  SWITCH TO (a target hint), not the current orientation. The label
+                  below makes that explicit so it doesn't read as a status readout. */}
+              <div className="flex flex-col items-center gap-1">
+                <button
+                  onClick={toggleOrientation}
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+                  aria-label={orientation === "portrait" ? "가로로 전환" : "세로로 전환"}
+                  title={orientation === "portrait" ? "가로로 전환" : "세로로 전환"}
+                >
+                  {orientation === "portrait" ? (
+                    /* Currently portrait → tapping switches to landscape */
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <rect x="2" y="5" width="20" height="14" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l3 3-3 3" />
+                    </svg>
+                  ) : (
+                    /* Currently landscape → tapping switches to portrait */
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <rect x="7" y="2" width="10" height="20" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 10l2 2-2 2" />
+                    </svg>
+                  )}
+                </button>
+                <span className="rounded-full bg-black/50 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white/80 backdrop-blur-md">
+                  {orientation === "portrait" ? "가로로 전환" : "세로로 전환"}
+                </span>
+              </div>
 
               {/* Flip camera */}
               <button
