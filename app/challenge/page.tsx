@@ -12,6 +12,7 @@ type CaptureState  = "idle" | "ready" | "recording" | "watermarking" | "preview"
 type FacingMode    = "user" | "environment";
 type RegisterState = "idle" | "working" | "done";
 type Orientation   = "portrait" | "landscape";
+type ResolutionMode = "standard" | "high";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ export default function ChallengePage() {
   // stream orientation matches the screen, since getUserMedia constraints can't
   // be trusted to produce it on many Android/Chrome combinations.
   const [streamDims,        setStreamDims]        = useState<{ width: number; height: number } | null>(null);
+  const [resolutionMode,    setResolutionMode]    = useState<ResolutionMode>("standard");
+  const [resolutionNotice,  setResolutionNotice]  = useState<string | null>(null);
   const [elapsed,           setElapsed]           = useState(0);
   const [error,             setError]             = useState<string | null>(null);
   const [watermarkProgress, setWatermarkProgress] = useState(0);
@@ -76,13 +79,18 @@ export default function ChallengePage() {
   // however the phone is physically held (e.g. a portrait phone gets a
   // portrait 720x1280 stream) — actual orientation is verified afterward from
   // the real videoWidth/videoHeight, not assumed from what was requested.
-  const startCamera = useCallback(async (facing: FacingMode) => {
+  const startCamera = useCallback(async (facing: FacingMode, mode: ResolutionMode = "standard") => {
     setError(null);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     setStreamDims(null);
     try {
+      const videoConstraints: MediaTrackConstraints = { facingMode: facing };
+      if (mode === "high") {
+        videoConstraints.width  = { ideal: 1080 };
+        videoConstraints.height = { ideal: 1920 };
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing },
+        video: videoConstraints,
         audio: true,
       });
       streamRef.current = stream;
@@ -113,18 +121,20 @@ export default function ChallengePage() {
   const flipCamera = useCallback(() => {
     const next: FacingMode = facingMode === "user" ? "environment" : "user";
     setFacingMode(next);
-    startCamera(next);
-  }, [facingMode, startCamera]);
+    startCamera(next, resolutionMode);
+  }, [facingMode, resolutionMode, startCamera]);
 
   // ── Orientation: apply + restart the stream if it actually changed ───────────
   // Refs (not state) back this so the rotation listener below can be registered
   // exactly once without ever reading stale facingMode/captureState/orientation.
-  const orientationRef  = useRef<Orientation>("portrait");
-  const captureStateRef = useRef<CaptureState>("idle");
-  const facingModeRef   = useRef<FacingMode>("user");
-  useEffect(() => { orientationRef.current  = orientation;  }, [orientation]);
-  useEffect(() => { captureStateRef.current = captureState; }, [captureState]);
-  useEffect(() => { facingModeRef.current   = facingMode;   }, [facingMode]);
+  const orientationRef     = useRef<Orientation>("portrait");
+  const captureStateRef    = useRef<CaptureState>("idle");
+  const facingModeRef      = useRef<FacingMode>("user");
+  const resolutionModeRef  = useRef<ResolutionMode>("standard");
+  useEffect(() => { orientationRef.current    = orientation;     }, [orientation]);
+  useEffect(() => { captureStateRef.current   = captureState;    }, [captureState]);
+  useEffect(() => { facingModeRef.current     = facingMode;      }, [facingMode]);
+  useEffect(() => { resolutionModeRef.current = resolutionMode;  }, [resolutionMode]);
 
   // Restarting on rotation matters even with zero constraints: on some Android
   // Chrome builds, an unconstrained getUserMedia call's resulting resolution
@@ -135,7 +145,7 @@ export default function ChallengePage() {
     orientationRef.current = next;
     setOrientation(next);
     if (changed && captureStateRef.current === "ready") {
-      startCamera(facingModeRef.current);
+      startCamera(facingModeRef.current, resolutionModeRef.current);
     }
   }, [startCamera]);
 
@@ -152,6 +162,42 @@ export default function ChallengePage() {
     mql.addEventListener("change", onChange);
     return () => mql.removeEventListener("change", onChange);
   }, [applyOrientation]);
+
+  // ── Resolution toggle ──────────────────────────────────────────────────────────
+  const changeResolutionMode = useCallback((mode: ResolutionMode) => {
+    if (mode === resolutionModeRef.current || captureStateRef.current === "recording") return;
+    resolutionModeRef.current = mode;
+    setResolutionMode(mode);
+    setResolutionNotice(null);
+    if (captureStateRef.current === "ready") {
+      startCamera(facingModeRef.current, mode);
+    }
+  }, [startCamera]);
+
+  // If asking for high-res makes the stream come back in the wrong orientation
+  // (or otherwise mismatched), that's a device that can't honor the resolution
+  // hint without breaking framing — fall back to standard automatically rather
+  // than show a broken/cropped preview.
+  useEffect(() => {
+    if (!streamDims || resolutionModeRef.current !== "high") return;
+    const isStreamPortrait = streamDims.height > streamDims.width;
+    const isScreenPortrait = orientationRef.current === "portrait";
+    if (isStreamPortrait !== isScreenPortrait) {
+      resolutionModeRef.current = "standard";
+      setResolutionMode("standard");
+      setResolutionNotice("이 기기는 표준 화질만 지원합니다.");
+      if (captureStateRef.current === "ready") {
+        startCamera(facingModeRef.current, "standard");
+      }
+    }
+  }, [streamDims, startCamera]);
+
+  // Auto-dismiss the fallback notice
+  useEffect(() => {
+    if (!resolutionNotice) return;
+    const t = setTimeout(() => setResolutionNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [resolutionNotice]);
 
   // ── File upload ───────────────────────────────────────────────────────────────
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -331,8 +377,8 @@ export default function ChallengePage() {
     rawBlobRef.current = null;
     setElapsed(0);
     setError(null);
-    startCamera(facingMode);
-  }, [previewUrl, facingMode, startCamera]);
+    startCamera(facingMode, resolutionMode);
+  }, [previewUrl, facingMode, resolutionMode, startCamera]);
 
   // ── Download ───────────────────────────────────────────────────────────────────
   const downloadVideo = useCallback(() => {
@@ -517,6 +563,16 @@ export default function ChallengePage() {
         </div>
       )}
 
+      {/* ── Resolution fallback notice ─────────────────────────────────────── */}
+      {resolutionNotice && (
+        <div
+          className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-xs font-medium text-white backdrop-blur-md"
+          style={{ top: "max(6rem, calc(env(safe-area-inset-top, 0px) + 4.5rem))" }}
+        >
+          {resolutionNotice}
+        </div>
+      )}
+
       {/* ════════════════════════════════════════════════════════════════════
           IDLE — camera start prompt + file upload
       ════════════════════════════════════════════════════════════════════ */}
@@ -537,7 +593,7 @@ export default function ChallengePage() {
 
           {/* Camera start */}
           <button
-            onClick={() => startCamera(facingMode)}
+            onClick={() => startCamera(facingMode, resolutionMode)}
             className="flex h-24 w-24 items-center justify-center rounded-full bg-orange-600 shadow-xl shadow-orange-900/60 active:scale-95"
             aria-label="카메라 시작"
           >
@@ -630,19 +686,6 @@ export default function ChallengePage() {
             )}
           </button>
 
-          {/* Flip camera (ready) */}
-          {captureState === "ready" && (
-            <button
-              onClick={flipCamera}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-              aria-label="카메라 전환"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
-          )}
-
           {/* Watermark ID badge (preview) */}
           {isPreview && watermarkResult && (
             <div className="max-w-[12rem] truncate rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md">
@@ -663,19 +706,41 @@ export default function ChallengePage() {
           style={{ paddingBottom: "max(2.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem))" }}
         >
           <div className="bg-gradient-to-t from-black/80 to-transparent pt-16">
-            <div className="flex items-center justify-center gap-10">
-              {/* Left: file upload (ready) or spacer (recording) */}
+            <div className="flex items-end justify-center gap-10">
+              {/* Left: file upload + resolution toggle (ready) or spacer (recording) */}
               {captureState === "ready" ? (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm active:scale-90"
-                  aria-label="영상 파일 업로드"
-                  title="영상 파일 업로드"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                  </svg>
-                </button>
+                <div className="flex flex-col items-center gap-2">
+                  {/* Resolution toggle — hidden entirely while recording, so it
+                      can never be changed mid-capture. */}
+                  <div className="flex items-center gap-1 rounded-full bg-white/10 p-1 backdrop-blur-md">
+                    <button
+                      onClick={() => changeResolutionMode("standard")}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                        resolutionMode === "standard" ? "bg-white text-black" : "text-white/70"
+                      }`}
+                    >
+                      표준
+                    </button>
+                    <button
+                      onClick={() => changeResolutionMode("high")}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                        resolutionMode === "high" ? "bg-white text-black" : "text-white/70"
+                      }`}
+                    >
+                      고화질
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm active:scale-90"
+                    aria-label="영상 파일 업로드"
+                    title="영상 파일 업로드"
+                  >
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                  </button>
+                </div>
               ) : (
                 <div className="w-14" />
               )}
