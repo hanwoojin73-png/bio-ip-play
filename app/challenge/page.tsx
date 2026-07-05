@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { generateWatermarkId, applyWatermark, type WatermarkResult } from "@/lib/watermark";
 import { uploadVideo, saveBioIPAsset, getOrCreateUserId } from "@/lib/supabase/upload";
 import type { ContentType, PerformanceType } from "@/types/bio-ip";
+import { RegistrationHighlight, HIGHLIGHT_STAGES, HIGHLIGHT_STAGE_DURATION_MS } from "@/components/capture";
+// Type-only import: erased at compile time, so this does NOT pull the (heavy)
+// @mediapipe/tasks-vision runtime into this page's bundle. The actual module
+// is only ever reached via a dynamic import() below.
+import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,15 +69,25 @@ export default function ChallengePage() {
   const [watermarkResult,   setWatermarkResult]   = useState<WatermarkResult | null>(null);
   const [previewUrl,        setPreviewUrl]        = useState<string | null>(null);
   const [registerState,  setRegisterState]  = useState<RegisterState>("idle");
-  const [registerStep,   setRegisterStep]   = useState<string>("");
   const [contentType,    setContentType]    = useState<ContentType>("self");
   const [pendingWatermark, setPendingWatermark] = useState(false);
+
+  // ── Registration highlight overlay (full-screen, upload-time only) ───────────
+  const [showHighlight,  setShowHighlight]  = useState(false);
+  const [highlightStage, setHighlightStage] = useState(0);
 
   // ── Bio-IP metadata form ──────────────────────────────────────────────────────
   const [ownerName,        setOwnerName]        = useState("");
   const [performanceType,  setPerformanceType]  = useState<PerformanceType | null>(null);
   const [performanceGenre, setPerformanceGenre] = useState("");
   const [characterName,    setCharacterName]    = useState("");
+
+  // ── Live "생체 인식 중" status dot — no landmarks/mesh are ever drawn on the
+  // face itself; this is purely a small indicator next to the back button so
+  // shooting a take is never visually obstructed. ───────────────────────────
+  const [bioSensorReady, setBioSensorReady] = useState(false);
+  const [faceDetected,   setFaceDetected]   = useState(false);
+  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
   const liveVideoRef    = useRef<HTMLVideoElement>(null);
@@ -88,6 +103,10 @@ export default function ChallengePage() {
   const watermarkCanvasRef  = useRef<HTMLCanvasElement | null>(null);
   const rafRef              = useRef<number | null>(null);
   const watermarkIdRef      = useRef<string>("");
+
+  // ── Recording-only voice waveform (preview UI, never baked into the file) ──
+  const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
+  const waveformRafRef    = useRef<number | null>(null);
 
   // ── Start camera ─────────────────────────────────────────────────────────────
   // Deliberately no width/height/aspectRatio constraints: forcing a specific
@@ -216,6 +235,114 @@ export default function ChallengePage() {
     const t = setTimeout(() => setResolutionNotice(null), 4000);
     return () => clearTimeout(t);
   }, [resolutionNotice]);
+
+  // ── Live face detection (status dot only — never drawn on the face) ──────────
+  // Runs at 5fps (200ms) rather than every frame: it only needs to answer a
+  // yes/no question for a tiny status dot, not drive any visual overlay, so
+  // there's no reason to spend more of a phone's battery/CPU on it. Loading
+  // is fully isolated behind try/catch — any failure (unsupported browser,
+  // blocked CDN, low-end device) just keeps the dot hidden and never affects
+  // shooting/recording.
+  useEffect(() => {
+    if (captureState !== "ready" && captureState !== "recording") return;
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    (async () => {
+      try {
+        const { getLiveFaceLandmarker } = await import("@/lib/bio-extractor/face-landmarker");
+        const landmarker = await getLiveFaceLandmarker();
+        if (cancelled) return;
+        faceLandmarkerRef.current = landmarker;
+        setBioSensorReady(true);
+
+        intervalId = setInterval(() => {
+          const video = liveVideoRef.current;
+          if (!video || video.readyState < 2) return;
+          try {
+            const result = landmarker.detectForVideo(video, performance.now());
+            setFaceDetected((result.faceLandmarks?.length ?? 0) > 0);
+          } catch {
+            /* transient — skip this tick */
+          }
+        }, 200);
+      } catch (e) {
+        console.warn("[bio-sensor] face landmarker unavailable, hiding status dot:", e);
+        if (!cancelled) setBioSensorReady(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [captureState]);
+
+  // Release the MediaPipe model when leaving the camera entirely.
+  useEffect(() => {
+    return () => {
+      if (!faceLandmarkerRef.current) return;
+      import("@/lib/bio-extractor/face-landmarker")
+        .then(({ disposeLiveFaceLandmarker }) => disposeLiveFaceLandmarker())
+        .catch(() => {});
+    };
+  }, []);
+
+  // ── Recording-only voice waveform ─────────────────────────────────────────────
+  // Purely a preview overlay drawn to its own <canvas> — the actual recording
+  // pipeline (startRecording above) draws only the camera frame + watermark,
+  // so this never ends up in the saved file. Torn down the moment recording
+  // stops, and never overlaps the face (it sits at the very bottom, above the
+  // record button).
+  useEffect(() => {
+    if (captureState !== "recording") return;
+    const stream = streamRef.current;
+    if (!stream || stream.getAudioTracks().length === 0) return;
+
+    let audioCtx: AudioContext | null = null;
+
+    try {
+      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      audioCtx = new Ctx();
+      audioCtx.resume().catch(() => {});
+      const source   = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const draw = () => {
+        const canvas = waveformCanvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (ctx && canvas) {
+          analyser.getByteFrequencyData(dataArray);
+          const w = canvas.width, h = canvas.height;
+          ctx.clearRect(0, 0, w, h);
+          const barGap   = 2;
+          const barWidth = w / bufferLength - barGap;
+          ctx.fillStyle = "#f97316"; // orange-500
+          for (let i = 0; i < bufferLength; i++) {
+            const barHeight = Math.max(2, (dataArray[i] / 255) * h);
+            const x = i * (barWidth + barGap);
+            ctx.beginPath();
+            ctx.roundRect(x, h - barHeight, barWidth, barHeight, 2);
+            ctx.fill();
+          }
+        }
+        waveformRafRef.current = requestAnimationFrame(draw);
+      };
+      waveformRafRef.current = requestAnimationFrame(draw);
+    } catch (e) {
+      console.warn("[waveform] audio analyser unavailable:", e);
+    }
+
+    return () => {
+      if (waveformRafRef.current) { cancelAnimationFrame(waveformRafRef.current); waveformRafRef.current = null; }
+      audioCtx?.close().catch(() => {});
+    };
+  }, [captureState]);
 
   // ── File upload ───────────────────────────────────────────────────────────────
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -436,8 +563,9 @@ export default function ChallengePage() {
     }
 
     setRegisterState("working");
-    setRegisterStep("준비 중…");
     setError(null);
+    setHighlightStage(0);
+    setShowHighlight(true);
 
     const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
       Promise.race([
@@ -447,18 +575,26 @@ export default function ChallengePage() {
         ),
       ]);
 
-    try {
+    // Scripted analysis narration — runs on its own clock, independent of how
+    // long the real upload actually takes. If real work finishes first, the
+    // highlight still plays out to the end before the success screen shows.
+    const runStageTimer = async () => {
+      for (let i = 0; i < HIGHLIGHT_STAGES.length; i++) {
+        setHighlightStage(i);
+        await new Promise((r) => setTimeout(r, HIGHLIGHT_STAGE_DURATION_MS));
+      }
+    };
+
+    const doUpload = async () => {
       const userId = await withTimeout(getOrCreateUserId(), 10_000, "사용자 확인");
       console.log("[register] userId:", userId);
 
       const blob = rawBlobRef.current;
       if (!blob) throw new Error("녹화된 영상이 없습니다.");
 
-      setRegisterStep(`영상 업로드 중… (${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
       const videoUrl = await withTimeout(uploadVideo(blob, userId), 60_000, "영상 업로드");
       console.log("[register] 업로드 완료:", videoUrl);
 
-      setRegisterStep("DB 저장 중…");
       const wId = watermarkResult?.uniqueId ?? generateWatermarkId();
       const newAssetId = await withTimeout(
         saveBioIPAsset({
@@ -487,15 +623,23 @@ export default function ChallengePage() {
       } catch (e) {
         console.warn("[register] localStorage 저장 실패:", e);
       }
+    };
 
+    try {
+      // Promise.all also gives us the "실패 시 연출 중단" behavior for free:
+      // if doUpload() rejects, this rejects immediately regardless of how far
+      // the stage timer has gotten.
+      await Promise.all([runStageTimer(), doUpload()]);
+
+      setShowHighlight(false);
       setRegisterState("done");
       await new Promise((r) => setTimeout(r, 700));
       router.push("/my-bio-ip");
     } catch (err) {
+      setShowHighlight(false);
       const msg = err instanceof Error ? err.message : "등록 중 오류가 발생했습니다.";
       console.error("[register] 실패:", msg);
       setError(msg);
-      setRegisterStep("");
       setRegisterState("idle");
     }
   }, [router, watermarkResult, contentType, ownerName, characterName, performanceType, performanceGenre]);
@@ -600,6 +744,11 @@ export default function ChallengePage() {
         >
           {streamDims ? `${streamDims.width}x${streamDims.height}${mismatch ? " (mismatch)" : ""}` : "…"}
         </div>
+      )}
+
+      {/* ── Registration highlight — full-screen, covers everything else ─── */}
+      {showHighlight && (
+        <RegistrationHighlight videoBlob={rawBlobRef.current} stageIndex={highlightStage} />
       )}
 
       {/* ── Resolution fallback notice ─────────────────────────────────────── */}
@@ -708,22 +857,36 @@ export default function ChallengePage() {
           className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4"
           style={{ paddingTop: "max(3rem, calc(env(safe-area-inset-top, 0px) + 1.5rem))" }}
         >
-          {/* Back (ready) or Retry (preview) */}
-          <button
-            onClick={isPreview ? reset : () => router.push("/")}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
-            aria-label={isPreview ? "다시 녹화" : "뒤로"}
-          >
-            {isPreview ? (
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            ) : (
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-              </svg>
+          <div className="flex items-center gap-2">
+            {/* Back (ready) or Retry (preview) */}
+            <button
+              onClick={isPreview ? reset : () => router.push("/")}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md active:scale-90"
+              aria-label={isPreview ? "다시 녹화" : "뒤로"}
+            >
+              {isPreview ? (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              )}
+            </button>
+
+            {/* Bio-sensor status — no landmarks ever drawn on the face itself */}
+            {captureState === "ready" && bioSensorReady && (
+              <div className="flex items-center gap-1.5 rounded-full bg-black/50 px-2.5 py-1.5 backdrop-blur-md">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    faceDetected ? "animate-pulse bg-orange-500" : "bg-zinc-500"
+                  }`}
+                />
+                <span className="text-xs font-medium text-white/70">생체 인식 중</span>
+              </div>
             )}
-          </button>
+          </div>
 
           {/* Watermark ID badge (preview) */}
           {isPreview && watermarkResult && (
@@ -745,6 +908,18 @@ export default function ChallengePage() {
           style={{ paddingBottom: "max(2.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem))" }}
         >
           <div className="bg-gradient-to-t from-black/80 to-transparent pt-16">
+            {/* Voice waveform — recording preview only, sits well below any
+                face framing and is never part of the saved video. */}
+            {isRecording && (
+              <div className="mb-5 flex justify-center px-10">
+                <canvas
+                  ref={waveformCanvasRef}
+                  width={280}
+                  height={24}
+                  className="h-6 w-full max-w-xs"
+                />
+              </div>
+            )}
             <div className="flex items-end justify-center gap-10">
               {/* Left: file upload + resolution toggle (ready) or spacer (recording) */}
               {captureState === "ready" ? (
@@ -964,12 +1139,9 @@ export default function ChallengePage() {
               </div>
             )}
 
-            {registerState === "working" && (
-              <div className="flex flex-col items-center gap-4 py-6">
-                <Spinner className="h-10 w-10 text-orange-400" />
-                <p className="text-sm font-medium text-zinc-300">{registerStep || "Bio-IP 등록 중…"}</p>
-              </div>
-            )}
+            {/* registerState === "working" has no UI here — the full-screen
+                RegistrationHighlight overlay (z-50) covers the whole screen
+                for the entire duration instead. */}
 
             {registerState === "done" && (
               <div className="flex flex-col items-center gap-3 py-6">
