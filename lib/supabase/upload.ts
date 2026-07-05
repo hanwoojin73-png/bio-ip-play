@@ -25,7 +25,7 @@
  */
 
 import { getSupabaseClient } from "@/lib/supabase";
-import type { ContentType } from "@/types/bio-ip";
+import type { ContentType, PerformanceType } from "@/types/bio-ip";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -37,28 +37,36 @@ export interface Landmark {
 }
 
 export interface SaveBioIPAssetInput {
-  userId:        string;
-  videoUrl:      string;
-  faceLandmarks: Landmark[];
-  poseLandmarks: Landmark[];
-  watermarkId:   string;
-  contentType?:  ContentType;
-  title?:        string;
+  userId:            string;
+  videoUrl:          string;
+  faceLandmarks:     Landmark[];
+  poseLandmarks:     Landmark[];
+  watermarkId:       string;
+  contentType?:      ContentType;
+  title?:            string;
+  ownerName:         string;
+  characterName?:    string | null;
+  performanceType:   PerformanceType;
+  performanceGenre?: string | null;
 }
 
-/** Shape returned by getBioIPAssets */
+/** Shape returned by getBioIPAssets / getBioIPAssetsByIds */
 export interface BioIPAssetRecord {
-  id:             string;
-  owner_id:       string;
-  video_url:      string | null;
-  watermark_id:   string | null;
-  content_type:   ContentType | null;
-  title:          string;
-  status:         string;
-  registered_at:  string;
-  updated_at:     string;
-  face_landmarks: Landmark[] | null;
-  pose_landmarks: Landmark[] | null;
+  id:                 string;
+  owner_id:           string;
+  video_url:          string | null;
+  watermark_id:       string | null;
+  content_type:       ContentType | null;
+  title:              string;
+  status:             string;
+  registered_at:      string;
+  updated_at:         string;
+  face_landmarks:     Landmark[] | null;
+  pose_landmarks:     Landmark[] | null;
+  owner_name:         string | null;
+  character_name:     string | null;
+  performance_type:   PerformanceType | null;
+  performance_genre:  string | null;
 }
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
@@ -97,20 +105,25 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
   });
 
   // `as any` is intentional: the Database generic doesn't include the new
-  // video_url / face_landmarks / pose_landmarks / watermark_id columns yet.
+  // video_url / face_landmarks / pose_landmarks / watermark_id / owner_name /
+  // character_name / performance_type / performance_genre columns yet.
   const { data, error } = await (supabase.from("bio_ip_assets") as any)
     .insert({
-      id:               crypto.randomUUID(),
-      owner_id:         input.userId,
-      video_url:        input.videoUrl,
-      face_landmarks:   input.faceLandmarks,
-      pose_landmarks:   input.poseLandmarks,
-      watermark_id:     input.watermarkId,
-      content_type:     input.contentType ?? "self",
-      title:            input.title ?? `Bio-IP Capture ${dateLabel}`,
-      bio_signature_id: input.watermarkId,
-      description:      "",
-      status:           "draft",
+      id:                 crypto.randomUUID(),
+      owner_id:           input.userId,
+      video_url:          input.videoUrl,
+      face_landmarks:     input.faceLandmarks,
+      pose_landmarks:     input.poseLandmarks,
+      watermark_id:       input.watermarkId,
+      content_type:       input.contentType ?? "self",
+      title:              input.title ?? `Bio-IP Capture ${dateLabel}`,
+      bio_signature_id:   input.watermarkId,
+      description:        "",
+      status:             "draft",
+      owner_name:         input.ownerName,
+      character_name:     input.characterName ?? null,
+      performance_type:   input.performanceType,
+      performance_genre:  input.performanceGenre ?? null,
       license_terms:    {
         scope:               "personal_only",
         allowedUseCases:     [],
@@ -128,6 +141,10 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
   return (data as { id: string }).id;
 }
 
+const ASSET_COLUMNS =
+  "id, owner_id, video_url, watermark_id, content_type, title, status, registered_at, updated_at, " +
+  "face_landmarks, pose_landmarks, owner_name, character_name, performance_type, performance_genre";
+
 /**
  * Fetches all Bio-IP assets for a given user, newest first.
  */
@@ -135,14 +152,45 @@ export async function getBioIPAssets(userId: string): Promise<BioIPAssetRecord[]
   const supabase = getSupabaseClient();
 
   const { data, error } = await (supabase.from("bio_ip_assets") as any)
-    .select(
-      "id, owner_id, video_url, watermark_id, content_type, title, status, registered_at, updated_at, face_landmarks, pose_landmarks",
-    )
+    .select(ASSET_COLUMNS)
     .eq("owner_id", userId)
     .order("registered_at", { ascending: false });
 
   if (error) throw new Error(`조회 실패: ${error.message}`);
   return (data ?? []) as BioIPAssetRecord[];
+}
+
+/**
+ * Fetches Bio-IP assets by explicit ID list, newest first. Used for the
+ * localStorage-tracked "my assets" view before login/owner_id is wired up.
+ */
+export async function getBioIPAssetsByIds(ids: string[]): Promise<BioIPAssetRecord[]> {
+  if (ids.length === 0) return [];
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await (supabase.from("bio_ip_assets") as any)
+    .select(ASSET_COLUMNS)
+    .in("id", ids)
+    .order("registered_at", { ascending: false });
+
+  if (error) throw new Error(`조회 실패: ${error.message}`);
+  return (data ?? []) as BioIPAssetRecord[];
+}
+
+/**
+ * Updates editable metadata fields (owner name / genre / character name) on
+ * an existing asset.
+ */
+export async function updateBioIPAsset(
+  assetId: string,
+  updates: Partial<{ owner_name: string; performance_genre: string | null; character_name: string | null }>,
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await (supabase.from("bio_ip_assets") as any)
+    .update(updates)
+    .eq("id", assetId);
+
+  if (error) throw new Error(`수정 실패: ${error.message}`);
 }
 
 // ─── Auth / guest ID ──────────────────────────────────────────────────────────

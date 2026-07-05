@@ -64,6 +64,8 @@ export interface Challenge {
 /** 'self' = 본인 모습 (퍼블리시티권), 'character' = 창작 캐릭터 (저작권) */
 export type ContentType = "self" | "character";
 
+export type PerformanceType = "연기" | "노래" | "춤" | "연주" | "기타";
+
 export type LicenseScope = "exclusive" | "non_exclusive" | "personal_only";
 export type AssetStatus = "draft" | "registered" | "disputed" | "revoked";
 

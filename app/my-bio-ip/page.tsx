@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  getBioIPAssets,
+  getBioIPAssetsByIds,
   deleteBioIPAsset,
-  getOrCreateUserId,
+  updateBioIPAsset,
   type BioIPAssetRecord,
 } from "@/lib/supabase/upload";
+import type { PerformanceType } from "@/types/bio-ip";
 import ShareButton from "@/components/ShareButton";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -18,6 +19,14 @@ function formatDate(iso: string) {
   });
 }
 
+function readMyAssetIds(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem("my_bio_ip_ids") || "[]");
+  } catch {
+    return [];
+  }
+}
+
 const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
   draft:      { label: "초안",    cls: "bg-zinc-700 text-zinc-300" },
   registered: { label: "등록됨",  cls: "bg-emerald-900 text-emerald-300" },
@@ -25,7 +34,18 @@ const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
   revoked:    { label: "취소됨",  cls: "bg-red-900 text-red-300" },
 };
 
-// ─── Spinner ──────────────────────────────────────────────────────────────────
+const PERFORMANCE_TYPES: PerformanceType[] = ["연기", "노래", "춤", "연주", "기타"];
+
+// Each performance type gets its own distinct color so cards scan quickly.
+const PERFORMANCE_BADGE: Record<PerformanceType, string> = {
+  "연기": "bg-violet-900/60 text-violet-300",
+  "노래": "bg-blue-900/60 text-blue-300",
+  "춤":   "bg-pink-900/60 text-pink-300",
+  "연주": "bg-emerald-900/60 text-emerald-300",
+  "기타": "bg-zinc-700 text-zinc-300",
+};
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 function Spinner() {
   return (
@@ -36,7 +56,15 @@ function Spinner() {
   );
 }
 
-// ─── Asset card ───────────────────────────────────────────────────────────────
+function PencilIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+    </svg>
+  );
+}
+
+// ─── License certificate ──────────────────────────────────────────────────────
 
 function openLicenseCertificate(asset: BioIPAssetRecord) {
   const contentTypeLabel =
@@ -53,6 +81,28 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
         year: "numeric", month: "long", day: "numeric",
       })
     : "—";
+
+  const performanceLabel = asset.performance_type
+    ? `${asset.performance_type}${asset.performance_genre ? ` (${asset.performance_genre})` : ""}`
+    : "—";
+
+  const extraRows = [
+    asset.owner_name ? `
+        <tr>
+          <td class="label">소유자</td>
+          <td class="value">${asset.owner_name}</td>
+        </tr>` : "",
+    asset.performance_type ? `
+        <tr>
+          <td class="label">퍼포먼스</td>
+          <td class="value">${performanceLabel}</td>
+        </tr>` : "",
+    asset.content_type === "character" && asset.character_name ? `
+        <tr>
+          <td class="label">캐릭터명</td>
+          <td class="value">${asset.character_name}</td>
+        </tr>` : "",
+  ].join("");
 
   const html = `<!DOCTYPE html>
 <html lang="ko">
@@ -194,6 +244,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
           <td class="label">자산명</td>
           <td class="value">${asset.title ?? "—"}</td>
         </tr>
+        ${extraRows}
         <tr>
           <td class="label">워터마크 ID</td>
           <td class="value mono">${asset.watermark_id ?? "—"}</td>
@@ -238,15 +289,51 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
   win.document.close();
 }
 
-function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () => void }) {
+// ─── Asset card ───────────────────────────────────────────────────────────────
+
+interface AssetCardProps {
+  asset: BioIPAssetRecord;
+  onDelete: () => void;
+  onUpdate: (updates: Partial<BioIPAssetRecord>) => void;
+}
+
+function AssetCard({ asset, onDelete, onUpdate }: AssetCardProps) {
   const [deleting, setDeleting] = useState(false);
+  const [editing,  setEditing]  = useState(false);
+  const [saving,   setSaving]   = useState(false);
+  const [editOwnerName, setEditOwnerName] = useState(asset.owner_name ?? "");
+  const [editGenre,     setEditGenre]     = useState(asset.performance_genre ?? "");
+
   const handleDelete = async () => {
     if (!confirm("이 Bio-IP 자산을 삭제하시겠습니까?")) return;
     setDeleting(true);
     try { await deleteBioIPAsset(asset.id, asset.video_url ?? undefined); onDelete(); }
     catch (e) { alert("삭제 실패: " + String(e)); setDeleting(false); }
   };
+
+  const handleEditToggle = async () => {
+    if (!editing) {
+      setEditOwnerName(asset.owner_name ?? "");
+      setEditGenre(asset.performance_genre ?? "");
+      setEditing(true);
+      return;
+    }
+    setSaving(true);
+    try {
+      const owner_name        = editOwnerName.trim() || asset.owner_name || "";
+      const performance_genre = editGenre.trim() || null;
+      await updateBioIPAsset(asset.id, { owner_name, performance_genre });
+      onUpdate({ owner_name, performance_genre });
+      setEditing(false);
+    } catch (e) {
+      alert("수정 실패: " + String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const statusStyle = STATUS_STYLES[asset.status] ?? STATUS_STYLES["draft"];
+  const badgeCls = asset.performance_type ? PERFORMANCE_BADGE[asset.performance_type] : null;
   const faceLandmarkCount = asset.face_landmarks?.length ?? 0;
   const poseLandmarkCount = asset.pose_landmarks?.length ?? 0;
 
@@ -285,20 +372,72 @@ function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () 
 
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-white">{asset.title}</h2>
-          {asset.watermark_id && (
-            <p className="mt-0.5 font-mono text-[10px] text-zinc-500">{asset.watermark_id}</p>
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <input
+              value={editOwnerName}
+              onChange={(e) => setEditOwnerName(e.target.value)}
+              placeholder="소유자 이름"
+              className="w-full rounded-lg bg-zinc-800 px-2 py-1 text-base font-bold text-white outline-none ring-1 ring-orange-500"
+            />
+          ) : (
+            <h2 className="truncate text-base font-bold text-white">
+              {asset.owner_name || asset.title}
+            </h2>
           )}
-          {asset.content_type && (
-            <span className="mt-1 inline-block rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
-              {asset.content_type === "character" ? "🎭 캐릭터" : "🙋 본인"}
-            </span>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {asset.performance_type && badgeCls && (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeCls}`}>
+                {asset.performance_type}
+              </span>
+            )}
+            {asset.content_type === "character" && asset.character_name && (
+              <span className="text-xs italic text-zinc-400">{asset.character_name}</span>
+            )}
+            {asset.content_type && (
+              <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">
+                {asset.content_type === "character" ? "🎭 캐릭터" : "🙋 본인"}
+              </span>
+            )}
+          </div>
+
+          {editing ? (
+            <input
+              value={editGenre}
+              onChange={(e) => setEditGenre(e.target.value)}
+              placeholder="장르 (선택)"
+              className="mt-1.5 w-full rounded-lg bg-zinc-800 px-2 py-1 text-xs text-zinc-300 outline-none ring-1 ring-orange-500"
+            />
+          ) : (
+            asset.performance_genre && (
+              <p className="mt-1.5 text-xs text-zinc-500">{asset.performance_genre}</p>
+            )
+          )}
+
+          {asset.watermark_id && (
+            <p className="mt-1 font-mono text-[10px] text-zinc-500">{asset.watermark_id}</p>
           )}
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusStyle.cls}`}>
-          {statusStyle.label}
-        </span>
+
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusStyle.cls}`}>
+            {statusStyle.label}
+          </span>
+          <button
+            onClick={handleEditToggle}
+            disabled={saving}
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-orange-400 disabled:opacity-40"
+            aria-label={editing ? "저장" : "이름/장르 수정"}
+            title={editing ? "저장" : "이름/장르 수정"}
+          >
+            {saving ? <Spinner /> : editing ? (
+              <span className="text-xs font-semibold text-orange-400">저장</span>
+            ) : (
+              <PencilIcon />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Bio data summary */}
@@ -347,7 +486,7 @@ function AssetCard({ asset, onDelete }: { asset: BioIPAssetRecord; onDelete: () 
       {/* Share */}
       <div className="border-t border-zinc-800 pt-3">
         <ShareButton
-          text={`내 Bio-IP "${asset.title}"를 등록했어요! #BioIP #블록체인`}
+          text={`내 Bio-IP "${asset.owner_name ?? asset.title}"를 등록했어요! #BioIP #블록체인`}
         />
       </div>
     </article>
@@ -374,7 +513,14 @@ function SkeletonCard() {
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ hasFilter }: { hasFilter: boolean }) {
+  if (hasFilter) {
+    return (
+      <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
+        <p className="text-sm text-zinc-400">이 유형의 Bio-IP가 아직 없어요</p>
+      </div>
+    );
+  }
   return (
     <div className="col-span-full flex flex-col items-center gap-6 py-20 text-center">
       <div className="rounded-full border border-zinc-700 bg-zinc-900 p-6">
@@ -403,18 +549,24 @@ function EmptyState() {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
+type FilterValue = "all" | PerformanceType;
+
 export default function MyBioIPPage() {
   const [assets,  setAssets]  = useState<BioIPAssetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  const [filter,  setFilter]  = useState<FilterValue>("all");
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const userId = await getOrCreateUserId();
-        const data   = await getBioIPAssets(userId);
+        // TODO: once login lands, switch this to getBioIPAssets(ownerId).
+        // For now "my assets" is whatever this browser has registered,
+        // tracked via the my_bio_ip_ids list in localStorage.
+        const ids  = readMyAssetIds();
+        const data = await getBioIPAssetsByIds(ids);
         if (!cancelled) setAssets(data);
       } catch (err) {
         if (!cancelled)
@@ -427,8 +579,20 @@ export default function MyBioIPPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const registered = assets.filter((a) => a.status === "registered").length;
-  const disputed   = assets.filter((a) => a.status === "disputed").length;
+  const performanceCounts = PERFORMANCE_TYPES.map((type) => ({
+    type,
+    count: assets.filter((a) => a.performance_type === type).length,
+  }));
+
+  const filteredAssets = filter === "all"
+    ? assets
+    : assets.filter((a) => a.performance_type === filter);
+
+  const handleDelete = (id: string) =>
+    setAssets((prev) => prev.filter((a) => a.id !== id));
+
+  const handleUpdate = (id: string, updates: Partial<BioIPAssetRecord>) =>
+    setAssets((prev) => prev.map((a) => (a.id === id ? { ...a, ...updates } : a)));
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
@@ -436,35 +600,56 @@ export default function MyBioIPPage() {
       {/* ── Header ── */}
       <header className="border-b border-zinc-800 px-6 py-6">
         <div className="mx-auto max-w-5xl">
-          <h1 className="text-2xl font-bold tracking-tight">My Bio-IP</h1>
+          <h1 className="text-2xl font-bold tracking-tight">나의 Bio-IP 보관함</h1>
           <p className="mt-1 text-sm text-zinc-400">
             등록된 생체 IP 자산을 관리하고 라이선스 현황을 확인하세요
           </p>
 
           {/* Stats row */}
           {!loading && (
-            <div className="mt-5 flex flex-wrap gap-4">
-              {[
-                { label: "전체 자산", value: assets.length, color: "text-white" },
-                { label: "등록됨",    value: registered,    color: "text-emerald-400" },
-                { label: "분쟁 중",   value: disputed,      color: "text-amber-400" },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3">
-                  <p className="text-xs text-zinc-500">{label}</p>
-                  <p className={`mt-0.5 text-2xl font-bold ${color}`}>{value}</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <div className="rounded-xl border border-orange-700/50 bg-orange-950/30 px-5 py-3">
+                <p className="text-xs text-orange-300/80">전체 자산</p>
+                <p className="mt-0.5 text-2xl font-bold text-orange-400">{assets.length}</p>
+              </div>
+              {performanceCounts.map(({ type, count }) => (
+                <div key={type} className="rounded-xl border border-zinc-800 bg-zinc-900 px-5 py-3">
+                  <p className="text-xs text-zinc-500">{type}</p>
+                  <p className="mt-0.5 text-2xl font-bold text-white">{count}</p>
                 </div>
               ))}
             </div>
           )}
           {loading && (
-            <div className="mt-5 flex gap-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 w-28 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900" />
+            <div className="mt-5 flex gap-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-16 w-24 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900" />
               ))}
             </div>
           )}
         </div>
       </header>
+
+      {/* ── Filter tabs ── */}
+      <div className="border-b border-zinc-800 px-6 py-3">
+        <div className="mx-auto flex max-w-5xl items-center gap-2 overflow-x-auto">
+          {([{ value: "all", label: "전체" }, ...PERFORMANCE_TYPES.map((t) => ({ value: t, label: t }))] as { value: FilterValue; label: string }[]).map(
+            ({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setFilter(value)}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  filter === value
+                    ? "bg-orange-600 text-white shadow-md"
+                    : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ),
+          )}
+        </div>
+      </div>
 
       {/* ── Toolbar ── */}
       <div className="border-b border-zinc-800 px-6 py-3">
@@ -475,7 +660,7 @@ export default function MyBioIPPage() {
                 <Spinner /> 불러오는 중…
               </span>
             ) : (
-              <>총 <span className="font-semibold text-white">{assets.length}</span>개 자산</>
+              <>총 <span className="font-semibold text-white">{filteredAssets.length}</span>개 자산</>
             )}
           </p>
           <Link
@@ -500,9 +685,14 @@ export default function MyBioIPPage() {
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {loading && [1, 2, 3].map((i) => <SkeletonCard key={i} />)}
-          {!loading && assets.length === 0 && !error && <EmptyState />}
-          {!loading && assets.map((asset) => (
-            <AssetCard key={asset.id} asset={asset} onDelete={() => setAssets((prev) => prev.filter((a) => a.id !== asset.id))} />
+          {!loading && filteredAssets.length === 0 && !error && <EmptyState hasFilter={filter !== "all"} />}
+          {!loading && filteredAssets.map((asset) => (
+            <AssetCard
+              key={asset.id}
+              asset={asset}
+              onDelete={() => handleDelete(asset.id)}
+              onUpdate={(updates) => handleUpdate(asset.id, updates)}
+            />
           ))}
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { generateWatermarkId, applyWatermark, type WatermarkResult } from "@/lib/watermark";
 import { uploadVideo, saveBioIPAsset, getOrCreateUserId } from "@/lib/supabase/upload";
-import type { ContentType } from "@/types/bio-ip";
+import type { ContentType, PerformanceType } from "@/types/bio-ip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,18 @@ function Spinner({ className = "h-6 w-6" }: { className?: string }) {
     </svg>
   );
 }
+
+// ─── Metadata form constants ───────────────────────────────────────────────────
+
+const PERFORMANCE_TYPES: PerformanceType[] = ["연기", "노래", "춤", "연주", "기타"];
+
+const GENRE_PLACEHOLDER: Record<PerformanceType, string> = {
+  "연기": "예: 드라마, 코미디, 액션",
+  "노래": "예: 클래식, 팝, 뮤지컬",
+  "춤":   "예: 발레, 한국무용, 현대무용",
+  "연주": "예: 피아노, 바이올린, 첼로",
+  "기타": "예: 마술, 개그, 스탠드업",
+};
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -55,6 +67,12 @@ export default function ChallengePage() {
   const [registerStep,   setRegisterStep]   = useState<string>("");
   const [contentType,    setContentType]    = useState<ContentType>("self");
   const [pendingWatermark, setPendingWatermark] = useState(false);
+
+  // ── Bio-IP metadata form ──────────────────────────────────────────────────────
+  const [ownerName,        setOwnerName]        = useState("");
+  const [performanceType,  setPerformanceType]  = useState<PerformanceType | null>(null);
+  const [performanceGenre, setPerformanceGenre] = useState("");
+  const [characterName,    setCharacterName]    = useState("");
 
   // ── DOM refs ─────────────────────────────────────────────────────────────────
   const liveVideoRef    = useRef<HTMLVideoElement>(null);
@@ -409,7 +427,14 @@ export default function ChallengePage() {
   }, [watermarkResult]);
 
   // ── Bio-IP registration ────────────────────────────────────────────────────────
+  const canRegister = ownerName.trim().length > 0 && performanceType !== null;
+
   const registerBioIP = useCallback(async () => {
+    if (ownerName.trim().length === 0 || performanceType === null) {
+      setError("소유자 이름과 퍼포먼스 유형을 입력해주세요.");
+      return;
+    }
+
     setRegisterState("working");
     setRegisterStep("준비 중…");
     setError(null);
@@ -435,19 +460,33 @@ export default function ChallengePage() {
 
       setRegisterStep("DB 저장 중…");
       const wId = watermarkResult?.uniqueId ?? generateWatermarkId();
-      await withTimeout(
+      const newAssetId = await withTimeout(
         saveBioIPAsset({
           userId,
           videoUrl,
-          faceLandmarks: [],
-          poseLandmarks: [],
-          watermarkId:   wId,
+          faceLandmarks:    [],
+          poseLandmarks:    [],
+          watermarkId:      wId,
           contentType,
+          ownerName:        ownerName.trim(),
+          characterName:    contentType === "character" ? (characterName.trim() || null) : null,
+          performanceType,
+          performanceGenre: performanceGenre.trim() || null,
         }),
         15_000,
         "DB 저장",
       );
-      console.log("[register] 완료");
+      console.log("[register] 완료:", newAssetId);
+
+      // Tracked in localStorage until login/owner_id is wired up — "나의
+      // Bio-IP 보관함" reads this list to know which assets are "mine".
+      try {
+        const ids: string[] = JSON.parse(localStorage.getItem("my_bio_ip_ids") || "[]");
+        ids.push(newAssetId);
+        localStorage.setItem("my_bio_ip_ids", JSON.stringify(ids));
+      } catch (e) {
+        console.warn("[register] localStorage 저장 실패:", e);
+      }
 
       setRegisterState("done");
       await new Promise((r) => setTimeout(r, 700));
@@ -459,7 +498,7 @@ export default function ChallengePage() {
       setRegisterStep("");
       setRegisterState("idle");
     }
-  }, [router, watermarkResult, contentType]);
+  }, [router, watermarkResult, contentType, ownerName, characterName, performanceType, performanceGenre]);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -791,7 +830,7 @@ export default function ChallengePage() {
           className="absolute bottom-0 left-0 right-0 z-20"
           style={{ paddingBottom: "max(2.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem))" }}
         >
-          <div className="bg-gradient-to-t from-black/95 via-black/65 to-transparent px-5 pt-20">
+          <div className="max-h-[85vh] overflow-y-auto bg-gradient-to-t from-black/95 via-black/65 to-transparent px-5 pt-20">
 
             {/* Registration error */}
             {error && registerState === "idle" && (
@@ -829,9 +868,72 @@ export default function ChallengePage() {
                   </div>
                 </div>
 
+                {/* Owner name (required) */}
+                <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-md">
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    소유자 이름 <span className="text-orange-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={ownerName}
+                    onChange={(e) => setOwnerName(e.target.value)}
+                    placeholder="예: 한우진"
+                    className="h-12 w-full rounded-xl bg-white/10 px-4 text-base text-white placeholder-white/40 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+
+                {/* Performance type (required) */}
+                <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-md">
+                  <p className="mb-2.5 text-xs font-medium text-white/70">
+                    퍼포먼스 유형 <span className="text-orange-400">*</span>
+                  </p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {PERFORMANCE_TYPES.map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setPerformanceType(type)}
+                        className={`flex h-12 items-center justify-center rounded-xl text-sm font-semibold transition-colors ${
+                          performanceType === type
+                            ? "bg-orange-600 text-white shadow-md"
+                            : "bg-white/15 text-white/70"
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Genre (optional, placeholder depends on performance type) */}
+                <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-md">
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">장르 (선택)</label>
+                  <input
+                    type="text"
+                    value={performanceGenre}
+                    onChange={(e) => setPerformanceGenre(e.target.value)}
+                    placeholder={performanceType ? GENRE_PLACEHOLDER[performanceType] : "퍼포먼스 유형을 먼저 선택하세요"}
+                    className="h-12 w-full rounded-xl bg-white/10 px-4 text-base text-white placeholder-white/40 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+
+                {/* Character name (optional, character content type only) */}
+                {contentType === "character" && (
+                  <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-md">
+                    <label className="mb-1.5 block text-xs font-medium text-white/70">캐릭터 이름 (선택)</label>
+                    <input
+                      type="text"
+                      value={characterName}
+                      onChange={(e) => setCharacterName(e.target.value)}
+                      placeholder="예: 홍길동"
+                      className="h-12 w-full rounded-xl bg-white/10 px-4 text-base text-white placeholder-white/40 outline-none ring-1 ring-white/10 focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                )}
+
                 <button
                   onClick={registerBioIP}
-                  className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-orange-600 text-base font-bold text-white shadow-lg shadow-orange-900/50 active:scale-[0.97]"
+                  disabled={!canRegister}
+                  className="flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-orange-600 text-base font-bold text-white shadow-lg shadow-orange-900/50 active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/40 disabled:shadow-none"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
