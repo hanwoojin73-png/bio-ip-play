@@ -7,6 +7,14 @@ export function createClient() {
   return createBrowserClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      // Explicit schema + profile headers — a defensive measure against
+      // PostgREST's schema cache lagging behind newly-added columns
+      // (bio_ip_assets.owner_name / character_name / performance_type /
+      // performance_genre) until it refreshes on its own.
+      db:     { schema: "public" },
+      global: { headers: { "Accept-Profile": "public" } },
+    },
   );
 }
 

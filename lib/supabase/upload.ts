@@ -104,26 +104,29 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
     year: "numeric", month: "2-digit", day: "2-digit",
   });
 
-  // `as any` is intentional: the Database generic doesn't include the new
-  // video_url / face_landmarks / pose_landmarks / watermark_id / owner_name /
-  // character_name / performance_type / performance_genre columns yet.
+  // Insert with only the long-established columns. owner_name /
+  // character_name / performance_type / performance_genre are written in a
+  // separate update call right after (see below) — PostgREST's schema cache
+  // can lag behind a freshly-added column (ALTER TABLE ran fine in Postgres,
+  // but the REST layer hasn't picked it up yet) and reject an insert that
+  // references it. Splitting the write means that lag can't block the whole
+  // registration; only the extra metadata is at risk, and only temporarily.
+  //
+  // `as any` is intentional: the Database generic doesn't include the
+  // video_url / face_landmarks / pose_landmarks / watermark_id columns yet.
   const { data, error } = await (supabase.from("bio_ip_assets") as any)
     .insert({
-      id:                 crypto.randomUUID(),
-      owner_id:           input.userId,
-      video_url:          input.videoUrl,
-      face_landmarks:     input.faceLandmarks,
-      pose_landmarks:     input.poseLandmarks,
-      watermark_id:       input.watermarkId,
-      content_type:       input.contentType ?? "self",
-      title:              input.title ?? `Bio-IP Capture ${dateLabel}`,
-      bio_signature_id:   input.watermarkId,
-      description:        "",
-      status:             "draft",
-      owner_name:         input.ownerName,
-      character_name:     input.characterName ?? null,
-      performance_type:   input.performanceType,
-      performance_genre:  input.performanceGenre ?? null,
+      id:               crypto.randomUUID(),
+      owner_id:         input.userId,
+      video_url:        input.videoUrl,
+      face_landmarks:   input.faceLandmarks,
+      pose_landmarks:   input.poseLandmarks,
+      watermark_id:     input.watermarkId,
+      content_type:     input.contentType ?? "self",
+      title:            input.title ?? `Bio-IP Capture ${dateLabel}`,
+      bio_signature_id: input.watermarkId,
+      description:      "",
+      status:           "draft",
       license_terms:    {
         scope:               "personal_only",
         allowedUseCases:     [],
@@ -138,7 +141,24 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
     .single();
 
   if (error) throw new Error(`DB 저장 실패: ${error.message}`);
-  return (data as { id: string }).id;
+  const assetId = (data as { id: string }).id;
+
+  // Best-effort: the video/DB row is already saved at this point, so a
+  // schema-cache failure here must not fail the whole registration — it
+  // just means the metadata stays empty until the cache catches up (or this
+  // update is retried, e.g. via the inline edit on the asset card).
+  try {
+    await updateBioIPAsset(assetId, {
+      owner_name:        input.ownerName,
+      character_name:    input.characterName ?? null,
+      performance_type:  input.performanceType,
+      performance_genre: input.performanceGenre ?? null,
+    });
+  } catch (e) {
+    console.warn("[saveBioIPAsset] metadata update failed (schema cache?):", e);
+  }
+
+  return assetId;
 }
 
 const ASSET_COLUMNS =
@@ -183,7 +203,12 @@ export async function getBioIPAssetsByIds(ids: string[]): Promise<BioIPAssetReco
  */
 export async function updateBioIPAsset(
   assetId: string,
-  updates: Partial<{ owner_name: string; performance_genre: string | null; character_name: string | null }>,
+  updates: Partial<{
+    owner_name:        string;
+    performance_genre: string | null;
+    character_name:    string | null;
+    performance_type:  PerformanceType;
+  }>,
 ): Promise<void> {
   const supabase = getSupabaseClient();
   const { error } = await (supabase.from("bio_ip_assets") as any)
