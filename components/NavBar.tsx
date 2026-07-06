@@ -89,6 +89,16 @@ export default function NavBar() {
                 </Link>
               </li>
             ))}
+            <li>
+              <a
+                href="/intro.html"
+                target="_blank"
+                rel="noopener"
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-400 transition-colors whitespace-nowrap hover:bg-zinc-800/50 hover:text-orange-400"
+              >
+                서비스 소개
+              </a>
+            </li>
           </ul>
 
           {/* 햄버거 버튼 (md 미만) */}
@@ -161,6 +171,16 @@ export default function NavBar() {
               </Link>
             </li>
           ))}
+          <li>
+            <a
+              href="/intro.html"
+              target="_blank"
+              rel="noopener"
+              className="flex items-center rounded-xl px-4 py-3 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/50 hover:text-orange-400"
+            >
+              서비스 소개
+            </a>
+          </li>
         </ul>
 
         {/* 드로어 하단 */}
