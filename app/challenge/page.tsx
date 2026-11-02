@@ -74,6 +74,12 @@ export default function ChallengePage() {
   const [registerState,  setRegisterState]  = useState<RegisterState>("idle");
   const [contentType,    setContentType]    = useState<ContentType>("self");
   const [pendingWatermark, setPendingWatermark] = useState(false);
+  // Where the current take came from, and the watermark ID burned into its
+  // frames (recorded takes only). This — not a freshly generated ID — is what
+  // gets saved as watermark_id, so the video, DB row and certificate agree.
+  // Uploaded files carry no watermark, so their ID is null.
+  const [captureSource,     setCaptureSource]     = useState<"recorded" | "uploaded" | null>(null);
+  const [burnedWatermarkId, setBurnedWatermarkId] = useState<string | null>(null);
 
   // ── Registration highlight overlay (full-screen, upload-time only) ───────────
   const [showHighlight,  setShowHighlight]  = useState(false);
@@ -357,6 +363,10 @@ export default function ChallengePage() {
     }
     rawBlobRef.current = file;
     setWatermarkError(null);
+    // Uploaded files are NOT watermarked — no ID is burned in, so none is saved.
+    watermarkIdRef.current = "";
+    setBurnedWatermarkId(null);
+    setCaptureSource("uploaded");
     // Skip watermarking — go directly to preview with original file
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
@@ -374,6 +384,8 @@ export default function ChallengePage() {
 
     watermarkIdRef.current = generateWatermarkId();
     const wmId    = watermarkIdRef.current;
+    setBurnedWatermarkId(wmId);
+    setCaptureSource("recorded");
     const dateStr = new Date().toLocaleDateString("ko-KR", {
       year: "numeric", month: "2-digit", day: "2-digit",
     });
@@ -481,6 +493,11 @@ export default function ChallengePage() {
   }, []);
 
   // ── Watermark effect ──────────────────────────────────────────────────────────
+  // NOTE (disconnected): nothing ever calls setPendingWatermark(true), so this
+  // effect never runs and watermarkResult stays null. applyWatermark() would
+  // only produce a JPEG thumbnail (with its own, different uniqueId) — the
+  // real watermark is burned in live by startRecording(). Do not use
+  // watermarkResult.uniqueId as the asset's watermark ID. Left as-is for now.
   useEffect(() => {
     if (!pendingWatermark) return;
     setPendingWatermark(false);
@@ -523,6 +540,9 @@ export default function ChallengePage() {
     setWatermarkError(null);
     setRegisterState("idle");
     rawBlobRef.current = null;
+    watermarkIdRef.current = "";
+    setBurnedWatermarkId(null);
+    setCaptureSource(null);
     setElapsed(0);
     setError(null);
     startCamera(facingMode, resolutionMode);
@@ -536,10 +556,10 @@ export default function ChallengePage() {
     const url = URL.createObjectURL(videoBlob);
     const a   = document.createElement("a");
     a.href     = url;
-    a.download = `bio-ip-${watermarkResult?.uniqueId ?? "challenge"}.${ext}`;
+    a.download = `bio-ip-${burnedWatermarkId ?? "challenge"}.${ext}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [watermarkResult]);
+  }, [burnedWatermarkId]);
 
   // ── SNS share ──────────────────────────────────────────────────────────────────
   const shareVideo = useCallback(async () => {
@@ -598,7 +618,12 @@ export default function ChallengePage() {
       const videoUrl = await withTimeout(uploadVideo(blob, userId), 60_000, "영상 업로드");
       console.log("[register] 업로드 완료:", videoUrl);
 
-      const wId = watermarkResult?.uniqueId ?? generateWatermarkId();
+      // The ID saved must be the one burned into the video. Never mint a new
+      // one here. Uploaded files have no burned-in ID → null.
+      const wId = captureSource === "uploaded" ? null : watermarkIdRef.current;
+      if (captureSource !== "uploaded" && !wId) {
+        throw new Error("워터마크 ID를 찾을 수 없습니다. 다시 촬영해 주세요.");
+      }
       const newAssetId = await withTimeout(
         saveBioIPAsset({
           userId,
@@ -645,7 +670,7 @@ export default function ChallengePage() {
       setError(msg);
       setRegisterState("idle");
     }
-  }, [router, watermarkResult, contentType, ownerName, characterName, performanceType, performanceGenre]);
+  }, [router, captureSource, contentType, ownerName, characterName, performanceType, performanceGenre]);
 
   // ── Cleanup on unmount ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -892,10 +917,17 @@ export default function ChallengePage() {
           </div>
 
           {/* Watermark ID badge (preview) */}
-          {isPreview && watermarkResult && (
+          {isPreview && captureSource === "recorded" && burnedWatermarkId && (
             <div className="max-w-[12rem] truncate rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md">
               <span className="font-mono text-[10px] tracking-wide text-zinc-300">
-                {watermarkResult.uniqueId}
+                {burnedWatermarkId}
+              </span>
+            </div>
+          )}
+          {isPreview && captureSource === "uploaded" && (
+            <div className="max-w-[14rem] truncate rounded-full bg-amber-900/70 px-3 py-1.5 backdrop-blur-md">
+              <span className="text-[11px] font-medium text-amber-200">
+                업로드 영상(워터마크 미적용)
               </span>
             </div>
           )}

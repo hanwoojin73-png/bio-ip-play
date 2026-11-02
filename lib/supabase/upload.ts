@@ -41,7 +41,8 @@ export interface SaveBioIPAssetInput {
   videoUrl:          string;
   faceLandmarks:     Landmark[];
   poseLandmarks:     Landmark[];
-  watermarkId:       string;
+  /** ID burned into the recorded video. null = uploaded file (no watermark). */
+  watermarkId:       string | null;
   contentType?:      ContentType;
   title?:            string;
   ownerName:         string;
@@ -107,9 +108,10 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
   // `as any` is intentional: the Database generic doesn't include the
   // video_url / face_landmarks / pose_landmarks / watermark_id / owner_name /
   // character_name / performance_type / performance_genre columns yet.
+  const assetId = crypto.randomUUID();
   const { data, error } = await (supabase.from("bio_ip_assets") as any)
     .insert({
-      id:                 crypto.randomUUID(),
+      id:                 assetId,
       owner_id:           input.userId,
       video_url:          input.videoUrl,
       face_landmarks:     input.faceLandmarks,
@@ -117,7 +119,9 @@ export async function saveBioIPAsset(input: SaveBioIPAssetInput): Promise<string
       watermark_id:       input.watermarkId,
       content_type:       input.contentType ?? "self",
       title:              input.title ?? `Bio-IP Capture ${dateLabel}`,
-      bio_signature_id:   input.watermarkId,
+      // Not displayed anywhere; falls back to the row ID for uploads so the
+      // column is never null (no schema change needed).
+      bio_signature_id:   input.watermarkId ?? assetId,
       description:        "",
       status:             "draft",
       owner_name:         input.ownerName,

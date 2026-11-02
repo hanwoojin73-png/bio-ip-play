@@ -11,6 +11,12 @@
  *
  * The original video is preserved unchanged. Only the thumbnail carries
  * the visible watermark.
+ *
+ * NOTE (disconnected): applyWatermark() is currently not reached from the app
+ * — app/challenge/page.tsx never triggers its watermark effect. The visible
+ * watermark on recorded videos is burned in live during recording, and the
+ * ID saved to the DB/certificate is that burned-in ID (generateWatermarkId()
+ * below is still the single source of IDs). Left untouched for now.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────

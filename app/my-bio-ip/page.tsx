@@ -66,6 +66,9 @@ function PencilIcon() {
 
 // ─── License certificate ──────────────────────────────────────────────────────
 
+/** Uploaded files carry no burned-in watermark, so no watermark_id is saved. */
+const UPLOADED_NO_WATERMARK_LABEL = "업로드 영상(워터마크 미적용)";
+
 function openLicenseCertificate(asset: BioIPAssetRecord) {
   const contentTypeLabel =
     asset.content_type === "character"
@@ -247,7 +250,9 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
         ${extraRows}
         <tr>
           <td class="label">워터마크 ID</td>
-          <td class="value mono">${asset.watermark_id ?? "—"}</td>
+          ${asset.watermark_id
+            ? `<td class="value mono">${asset.watermark_id}</td>`
+            : `<td class="value">${UPLOADED_NO_WATERMARK_LABEL}</td>`}
         </tr>
         <tr>
           <td class="label">콘텐츠 유형</td>
@@ -415,8 +420,12 @@ function AssetCard({ asset, onDelete, onUpdate }: AssetCardProps) {
             )
           )}
 
-          {asset.watermark_id && (
+          {asset.watermark_id ? (
             <p className="mt-1 font-mono text-[10px] text-zinc-500">{asset.watermark_id}</p>
+          ) : (
+            <p className="mt-1 inline-block rounded bg-amber-900/50 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+              {UPLOADED_NO_WATERMARK_LABEL}
+            </p>
           )}
         </div>
 
