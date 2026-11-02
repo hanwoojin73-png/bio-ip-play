@@ -9,7 +9,7 @@ interface ShareButtonProps {
 
 export default function ShareButton({
   url,
-  text = "내 Bio-IP를 등록했어요! #BioIP #블록체인",
+  text = "내 Bio-IP를 등록했어요! #BioIP #HANiPLAY",
 }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
 

@@ -13,13 +13,16 @@
 
 import { useEffect, useState } from "react";
 
+// Each label describes something the registration flow really does:
+// the recorded take is loaded, a face-landmark pass runs on its first frame
+// (the dot animation below), the take's watermark ID is attached to the
+// record, and the record is saved to the vault. Per-element (초상/표정/몸짓/
+// 음성) extraction is NOT implemented yet — don't label stages as if it were.
 export const HIGHLIGHT_STAGES = [
-  "초상 분석 중",
-  "표정 분석 중",
-  "몸짓 분석 중",
-  "음성 분석 중",
-  "호흡 패턴 추출 중",
-  "Bio-IP 생성 완료",
+  "영상 확인",
+  "얼굴 인식",
+  "워터마크 ID 연결",
+  "보관함 등록",
 ] as const;
 
 export const HIGHLIGHT_STAGE_DURATION_MS = 700;

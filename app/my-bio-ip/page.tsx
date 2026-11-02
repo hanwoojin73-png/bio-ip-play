@@ -486,7 +486,7 @@ function AssetCard({ asset, onDelete, onUpdate }: AssetCardProps) {
       {/* Share */}
       <div className="border-t border-zinc-800 pt-3">
         <ShareButton
-          text={`내 Bio-IP "${asset.owner_name ?? asset.title}"를 등록했어요! #BioIP #블록체인`}
+          text={`내 Bio-IP "${asset.owner_name ?? asset.title}"를 등록했어요! #BioIP #HANiPLAY`}
         />
       </div>
     </article>

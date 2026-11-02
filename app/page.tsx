@@ -11,20 +11,20 @@ function IconBio() {
   );
 }
 
-function IconChain() {
+function IconVault() {
   return (
     <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round"
-        d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+        d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
     </svg>
   );
 }
 
-function IconContract() {
+function IconWatermark() {
   return (
     <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round"
-        d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
     </svg>
   );
 }
@@ -41,19 +41,13 @@ function IconArrowRight() {
 
 interface Feature {
   id:          string;
-  iconKey:     "bio" | "chain" | "contract";
+  iconKey:     "bio" | "vault" | "watermark";
   title:       string;
   badge:       string;
   description: string;
   accent:      string;
   badgeClass:  string;
   borderHover: string;
-}
-
-interface Stat {
-  value: string;
-  unit:  string;
-  label: string;
 }
 
 interface TechPoint {
@@ -83,31 +77,25 @@ const FEATURES: Feature[] = [
     borderHover: "hover:border-orange-700/60",
   },
   {
-    id:          "chain",
-    iconKey:     "chain",
-    title:       "블록체인 자산화",
-    badge:       "On-Chain",
-    description: "생체 시그니처를 NFT로 발행해 온체인에 소유권을 등록합니다. IPFS 메타데이터로 변조 불가능한 원본 증명을 보장합니다.",
+    id:          "vault",
+    iconKey:     "vault",
+    title:       "Bio-IP 보관함",
+    badge:       "My Bio-IP",
+    description: "내가 등록한 Bio-IP를 한곳에서 관리하고 증명서를 발급합니다.",
     accent:      "from-blue-500 to-cyan-600",
     badgeClass:  "bg-blue-900/60 text-blue-300",
     borderHover: "hover:border-blue-700/60",
   },
   {
-    id:          "contract",
-    iconKey:     "contract",
-    title:       "스마트 계약 로열티",
-    badge:       "Automated",
-    description: "라이선스 조건·허용 사용처·지역·만료일을 스마트 계약에 인코딩. 사용이 발생하는 순간 로열티가 자동으로 정산됩니다.",
+    id:          "watermark",
+    iconKey:     "watermark",
+    title:       "워터마크 녹화",
+    badge:       "Watermark ID",
+    description: "촬영하는 모든 프레임에 HANiPLAY 마크와 고유 워터마크 ID, 날짜를 합성합니다. 같은 ID가 보관함과 증명서에 기록됩니다.",
     accent:      "from-emerald-500 to-teal-600",
     badgeClass:  "bg-emerald-900/60 text-emerald-300",
     borderHover: "hover:border-emerald-700/60",
   },
-];
-
-const STATS: Stat[] = [
-  { value: "4",    unit: "요소",    label: "초상·표정·몸짓·음성" },
-  { value: "100%", unit: "본인 소유", label: "소유권 등록" },
-  { value: "0",    unit: "중개자",  label: "직접 로열티 정산" },
 ];
 
 const TECH_POINTS: TechPoint[] = [
@@ -126,17 +114,17 @@ const STEPS: Step[] = [
   },
   {
     step:  "02",
-    title: "자산 등록",
-    desc:  "바이오 시그니처를 검증하고 라이선스 조건을 설정한 뒤 NFT로 발행합니다.",
+    title: "Bio-IP 등록",
+    desc:  "소유자 이름과 퍼포먼스 정보를 입력하면 워터마크 ID와 함께 보관함에 등록됩니다.",
     href:  "/my-bio-ip",
-    cta:   "자산 보기",
+    cta:   "보관함 보기",
   },
   {
     step:  "03",
-    title: "로열티 수령",
-    desc:  "라이선시가 자산을 사용할 때마다 스마트 계약이 자동으로 정산합니다.",
-    href:  "/dashboard",
-    cta:   "대시보드",
+    title: "증명서 발급",
+    desc:  "보관함에서 등록 증명서를 발급하고 SNS로 공유합니다.",
+    href:  "/my-bio-ip",
+    cta:   "보관함 보기",
   },
 ];
 
@@ -144,8 +132,8 @@ const STEPS: Step[] = [
 
 function FeatureIcon({ iconKey }: { iconKey: Feature["iconKey"] }) {
   if (iconKey === "bio")      return <IconBio />;
-  if (iconKey === "chain")    return <IconChain />;
-  if (iconKey === "contract") return <IconContract />;
+  if (iconKey === "vault")     return <IconVault />;
+  if (iconKey === "watermark") return <IconWatermark />;
   return null;
 }
 
@@ -211,20 +199,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="relative z-10 mt-16 flex flex-wrap items-center justify-center gap-10">
-          {(STATS ?? []).map((stat) => (
-            <div key={stat?.label ?? ""} className="text-center">
-              <p className="text-3xl font-extrabold text-white">
-                {stat?.value ?? "—"}
-                <span className="ml-1 text-lg font-semibold text-orange-400">
-                  {stat?.unit ?? ""}
-                </span>
-              </p>
-              <p className="mt-0.5 text-xs text-zinc-500">{stat?.label ?? ""}</p>
-            </div>
-          ))}
-        </div>
       </section>
 
       {/* ── Core Technology ── */}
@@ -356,7 +330,7 @@ export default function LandingPage() {
             지금 바로 내 생체 IP를 등록하세요
           </h2>
           <p className="mt-2 text-sm text-zinc-400">
-            캡처부터 등록·정산까지, 중개자 없이 직접 관리합니다.
+            촬영부터 등록·증명서 발급까지, 내가 직접 관리합니다.
           </p>
           <Link
             href="/challenge"
