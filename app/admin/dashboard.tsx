@@ -399,7 +399,7 @@ export default function AdminDashboard({
             </div>
             <div>
               <p className="text-sm font-bold leading-none text-white">Admin Dashboard</p>
-              <p className="text-[10px] text-zinc-500">BIO-IP Play</p>
+              <p className="text-[10px] text-zinc-500">HANiPLAY</p>
             </div>
           </div>
 
@@ -556,7 +556,7 @@ export default function AdminDashboard({
 
         {/* ── Footer ── */}
         <footer className="border-t border-zinc-800 pt-6 pb-2 text-center text-xs text-zinc-700">
-          BIO-IP Play Admin · 마지막 갱신: {new Date().toLocaleString("ko-KR")}
+          HANiPLAY Admin · 마지막 갱신: {new Date().toLocaleString("ko-KR")}
         </footer>
       </main>
     </div>

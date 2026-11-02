@@ -151,7 +151,7 @@ export async function applyWatermark(
     onProgress,
   } = options;
   const logoText = options.logoText
-    ?? (contentType === "character" ? "BIO-IP PLAY · 캐릭터IP" : "BIO-IP PLAY · 본인인증");
+    ?? (contentType === "character" ? "HANiPLAY · 캐릭터IP" : "HANiPLAY · 본인인증");
 
   const uniqueId = providedId ?? generateWatermarkId();
   const dateStr  = date.toLocaleDateString("ko-KR", {

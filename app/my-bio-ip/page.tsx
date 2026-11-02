@@ -109,7 +109,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BIO-IP 라이선스 인증서</title>
+  <title>HANiPLAY 라이선스 인증서</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -227,15 +227,15 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
 <body>
   <div class="cert">
     <div class="header">
-      <p class="platform">BIO-IP PLAY</p>
+      <p class="platform">HANiPLAY</p>
       <p class="title-ko">라이선스 인증서</p>
       <p class="title-en">Bio-IP License Certificate</p>
-      <div class="seal">BIO<br/>IP</div>
+      <div class="seal">HANi<br/>PLAY</div>
     </div>
 
     <div class="body">
       <p class="intro">
-        본 인증서는 BIO-IP PLAY 플랫폼에 등록된 생체 IP 자산의<br/>
+        본 인증서는 HANiPLAY 플랫폼에 등록된 생체 IP 자산의<br/>
         등록 사실을 증명합니다.
       </p>
 
@@ -263,7 +263,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
         </tr>
         <tr>
           <td class="label">발급 플랫폼</td>
-          <td class="value">BIO-IP PLAY (bio-ip-play.vercel.app)</td>
+          <td class="value">HANiPLAY (bio-ip-play.vercel.app)</td>
         </tr>
       </table>
     </div>
@@ -271,7 +271,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
     <div class="footer">
       <div class="footer-left">
         bio-ip-play.vercel.app<br/>
-        © BIO-IP PLAY. All rights reserved.
+        © HANiPLAY. All rights reserved.
       </div>
       <div class="footer-right">
         <p class="issued-label">발급일</p>

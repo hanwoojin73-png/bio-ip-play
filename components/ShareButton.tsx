@@ -21,7 +21,7 @@ export default function ShareButton({
       // KakaoTalk deep link — opens KakaoTalk on mobile
       window.location.href = `kakaotalk://msg/send?text=${encodeURIComponent(text + "\n" + shareUrl)}`;
     } else if (navigator.share) {
-      navigator.share({ title: "BIO-IP Play", text, url: shareUrl }).catch(() => {});
+      navigator.share({ title: "HANiPLAY", text, url: shareUrl }).catch(() => {});
     } else {
       // Desktop fallback: copy text + URL
       navigator.clipboard

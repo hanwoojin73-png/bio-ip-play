@@ -34,6 +34,9 @@ function Spinner({ className = "h-6 w-6" }: { className?: string }) {
   );
 }
 
+// Brand mark burned into every newly recorded frame.
+const WATERMARK_LOGO = "HANiPLAY";
+
 // ─── Metadata form constants ───────────────────────────────────────────────────
 
 const PERFORMANCE_TYPES: PerformanceType[] = ["연기", "노래", "춤", "연주", "기타"];
@@ -398,7 +401,7 @@ export default function ChallengePage() {
       const innerPadY = Math.round(8  * scale);
       ctx.save();
       ctx.font = `700 ${logoSize}px -apple-system,Arial,sans-serif`;
-      const logoW = ctx.measureText("BIO-IP PLAY").width;
+      const logoW = ctx.measureText(WATERMARK_LOGO).width;
       ctx.font = `${metaSize}px monospace`;
       const idW   = ctx.measureText(wmId).width;
       const dateW = ctx.measureText(dateStr).width;
@@ -418,7 +421,7 @@ export default function ChallengePage() {
       const tx = bgX + innerPadX;
       ctx.fillStyle = "#ffffff";
       ctx.font = `700 ${logoSize}px -apple-system,Arial,sans-serif`;
-      ctx.fillText("BIO-IP PLAY", tx, bgY + innerPadY);
+      ctx.fillText(WATERMARK_LOGO, tx, bgY + innerPadY);
       ctx.fillStyle = "#cccccc";
       ctx.font = `${metaSize}px monospace`;
       ctx.fillText(wmId,    tx, bgY + innerPadY + logoSize + (lineGap - metaSize) / 2);
@@ -546,9 +549,9 @@ export default function ChallengePage() {
     const file = new File([blob], `bio-ip-challenge.${ext}`, { type: blob.type });
     try {
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "BIO-IP Challenge", text: "나의 Bio-IP 챌린지 🎬" });
+        await navigator.share({ files: [file], title: "HANiPLAY Challenge", text: "나의 Bio-IP 챌린지 🎬" });
       } else if (navigator.share) {
-        await navigator.share({ title: "BIO-IP Challenge", url: window.location.href });
+        await navigator.share({ title: "HANiPLAY Challenge", url: window.location.href });
       }
     } catch { /* user cancelled */ }
   }, [watermarkResult]);

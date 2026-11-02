@@ -135,7 +135,7 @@ export default function RegistrationHighlight({ videoBlob, stageIndex }: Registr
           />
         </div>
 
-        <p className="text-xs text-white/40">BIO-IP PLAY · 초상 · 표정 · 몸짓 · 음성</p>
+        <p className="text-xs text-white/40">HANiPLAY · Bio-IP 등록</p>
       </div>
 
       {/* Decorative waveform — purely visual flourish, not real audio data */}

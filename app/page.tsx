@@ -180,7 +180,7 @@ export default function LandingPage() {
           {/* Protocol badge */}
           <span className="inline-flex items-center gap-2 rounded-full border border-orange-700/50 bg-orange-950/60 px-4 py-1.5 text-xs font-semibold text-orange-300 backdrop-blur-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
-            Biometric IP Protocol · Beta
+            HANiPLAY · Beta
           </span>
 
           {/* Headline */}
@@ -235,7 +235,7 @@ export default function LandingPage() {
               Technology
             </p>
             <h2 className="text-2xl font-bold sm:text-3xl">
-              BIO-IP PLAY만의 기술
+              HANiPLAY만의 기술
             </h2>
           </div>
 
@@ -369,7 +369,7 @@ export default function LandingPage() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-zinc-800 px-6 py-6 text-center text-xs text-zinc-600">
-        © 2026 BIO-IP play. Biometric IP on-chain protocol.
+        © 2026 HANiPLAY — PLAY your Bio-IP
       </footer>
     </div>
   );

@@ -66,10 +66,10 @@ export default function NavBar() {
           {/* 로고 */}
           <Link href="/" className="flex items-center gap-1.5 select-none">
             <span className="font-mono text-base font-bold tracking-tight text-white">
-              BIO-IP
+              HANi
             </span>
-            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">
-              play
+            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
+              PLAY
             </span>
           </Link>
 
@@ -136,9 +136,9 @@ export default function NavBar() {
             className="flex items-center gap-1.5 select-none"
             onClick={() => setOpen(false)}
           >
-            <span className="font-mono text-sm font-bold text-white">BIO-IP</span>
-            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">
-              play
+            <span className="font-mono text-sm font-bold text-white">HANi</span>
+            <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
+              PLAY
             </span>
           </Link>
           <button
@@ -185,7 +185,7 @@ export default function NavBar() {
 
         {/* 드로어 하단 */}
         <div className="mt-auto border-t border-zinc-800 px-5 py-4">
-          <p className="text-[10px] text-zinc-600">© 2026 BIO-IP play</p>
+          <p className="text-[10px] text-zinc-600">© 2026 HANiPLAY</p>
         </div>
       </div>
     </>
