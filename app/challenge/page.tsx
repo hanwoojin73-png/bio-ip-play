@@ -35,7 +35,7 @@ function Spinner({ className = "h-6 w-6" }: { className?: string }) {
 }
 
 // Brand mark burned into every newly recorded frame.
-const WATERMARK_LOGO = "HANiPLAY";
+const WATERMARK_LOGO = "HANiplay";
 
 // ─── Metadata form constants ───────────────────────────────────────────────────
 
@@ -569,9 +569,9 @@ export default function ChallengePage() {
     const file = new File([blob], `bio-ip-challenge.${ext}`, { type: blob.type });
     try {
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "HANiPLAY Challenge", text: "나의 Bio-IP 챌린지 🎬" });
+        await navigator.share({ files: [file], title: "HANiplay Challenge", text: "나의 Bio-IP 챌린지 🎬" });
       } else if (navigator.share) {
-        await navigator.share({ title: "HANiPLAY Challenge", url: window.location.href });
+        await navigator.share({ title: "HANiplay Challenge", url: window.location.href });
       }
     } catch { /* user cancelled */ }
   }, [watermarkResult]);
@@ -797,7 +797,7 @@ export default function ChallengePage() {
           <div className="space-y-3">
             <h1 className="text-3xl font-extrabold tracking-tight text-white">Bio-IP 챌린지</h1>
             <p className="text-sm leading-relaxed text-zinc-400">
-              카메라와 마이크를 켜고<br />나만의 생체 IP를 기록하세요
+              카메라와 마이크를 켜고<br />나만의 Bio-IP를 기록하세요
             </p>
           </div>
 

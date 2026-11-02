@@ -69,7 +69,7 @@ export default function NavBar() {
               HANi
             </span>
             <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
-              PLAY
+              play
             </span>
           </Link>
 
@@ -138,7 +138,7 @@ export default function NavBar() {
           >
             <span className="font-mono text-sm font-bold text-white">HANi</span>
             <span className="rounded-md bg-orange-600 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
-              PLAY
+              play
             </span>
           </Link>
           <button
@@ -185,7 +185,7 @@ export default function NavBar() {
 
         {/* 드로어 하단 */}
         <div className="mt-auto border-t border-zinc-800 px-5 py-4">
-          <p className="text-[10px] text-zinc-600">© 2026 HANiPLAY</p>
+          <p className="text-[10px] text-zinc-600">© 2026 HANiplay</p>
         </div>
       </div>
     </>

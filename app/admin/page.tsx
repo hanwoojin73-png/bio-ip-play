@@ -123,7 +123,7 @@ function LoginPage({ loginError }: { loginError?: boolean }) {
             </svg>
           </div>
           <h1 className="text-xl font-bold text-white">Admin Dashboard</h1>
-          <p className="text-sm text-zinc-500">HANiPLAY 관리자 전용</p>
+          <p className="text-sm text-zinc-500">HANiplay 관리자 전용</p>
         </div>
 
         {loginError && (

@@ -14,7 +14,7 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
-const SITE_TITLE       = "HANiPLAY";
+const SITE_TITLE       = "HANiplay";
 const SITE_DESCRIPTION = "AI보다 내가 먼저. 나의 초상·표정·몸짓·음성을 Bio-IP로.";
 
 export const metadata: Metadata = {

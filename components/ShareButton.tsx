@@ -9,7 +9,7 @@ interface ShareButtonProps {
 
 export default function ShareButton({
   url,
-  text = "내 Bio-IP를 등록했어요! #BioIP #HANiPLAY",
+  text = "내 Bio-IP를 등록했어요! #BioIP #HANiplay",
 }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
 
@@ -21,7 +21,7 @@ export default function ShareButton({
       // KakaoTalk deep link — opens KakaoTalk on mobile
       window.location.href = `kakaotalk://msg/send?text=${encodeURIComponent(text + "\n" + shareUrl)}`;
     } else if (navigator.share) {
-      navigator.share({ title: "HANiPLAY", text, url: shareUrl }).catch(() => {});
+      navigator.share({ title: "HANiplay", text, url: shareUrl }).catch(() => {});
     } else {
       // Desktop fallback: copy text + URL
       navigator.clipboard

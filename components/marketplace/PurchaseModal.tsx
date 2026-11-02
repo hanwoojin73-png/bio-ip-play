@@ -496,7 +496,7 @@ function StepProcessing({ method }: { method: PaymentMethod }) {
   const steps =
     method === "usdc"
       ? ["지갑 서명 확인 중…", "트랜잭션 브로드캐스트…", "온체인 컨펌 대기…", "라이선스 발급 중…"]
-      : ["결제 승인 요청 중…", "카드사 인증 중…", "결제 완료…", "라이선스 발급 중…"];
+      : ["결제 승인 요청 중…", "카드사 확인 중…", "결제 완료…", "라이선스 발급 중…"];
 
   const [current, setCurrent] = useState(0);
 

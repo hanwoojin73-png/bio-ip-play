@@ -69,7 +69,7 @@ const FEATURES: Feature[] = [
   {
     id:          "bio",
     iconKey:     "bio",
-    title:       "생체 신호 추출",
+    title:       "연기 데이터 추출",
     badge:       "3-Layer",
     description: "시각(얼굴 기하·표정), 음성(피치·음색·리듬), 다이내믹스(제스처·모션 템포)를 동시에 캡처해 고유한 바이오 시그니처를 생성합니다.",
     accent:      "from-orange-500 to-orange-600",
@@ -91,7 +91,7 @@ const FEATURES: Feature[] = [
     iconKey:     "watermark",
     title:       "워터마크 녹화",
     badge:       "Watermark ID",
-    description: "촬영하는 모든 프레임에 HANiPLAY 마크와 고유 워터마크 ID, 날짜를 합성합니다. 같은 ID가 보관함과 증명서에 기록됩니다.",
+    description: "촬영하는 모든 프레임에 HANiplay 마크와 고유 워터마크 ID, 날짜를 합성합니다. 같은 ID가 보관함과 증명서에 기록됩니다.",
     accent:      "from-emerald-500 to-teal-600",
     badgeClass:  "bg-emerald-900/60 text-emerald-300",
     borderHover: "hover:border-emerald-700/60",
@@ -101,7 +101,7 @@ const FEATURES: Feature[] = [
 const TECH_POINTS: TechPoint[] = [
   { title: "4가지 요소",   desc: "초상 · 표정 · 몸짓 · 음성" },
   { title: "호흡 분석",     desc: "4요소 사이의 고유한 리듬과 타이밍을 데이터화" },
-  { title: "고유 지문 생성", desc: "대체 불가능한 나만의 Bio-IP" },
+  { title: "나만의 시그니처", desc: "내 연기의 고유한 결을 Bio-IP로" },
 ];
 
 const STEPS: Step[] = [
@@ -168,7 +168,7 @@ export default function LandingPage() {
           {/* Protocol badge */}
           <span className="inline-flex items-center gap-2 rounded-full border border-orange-700/50 bg-orange-950/60 px-4 py-1.5 text-xs font-semibold text-orange-300 backdrop-blur-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
-            HANiPLAY · Beta
+            HANiplay · Beta
           </span>
 
           {/* Headline */}
@@ -209,7 +209,7 @@ export default function LandingPage() {
               Technology
             </p>
             <h2 className="text-2xl font-bold sm:text-3xl">
-              HANiPLAY만의 기술
+              HANiplay만의 기술
             </h2>
           </div>
 
@@ -242,7 +242,7 @@ export default function LandingPage() {
               핵심 기능
             </p>
             <h2 className="text-2xl font-bold sm:text-3xl">
-              생체 IP의 전 과정을 하나로
+              Bio-IP의 전 과정을 하나로
             </h2>
           </div>
 
@@ -327,7 +327,7 @@ export default function LandingPage() {
       <section className="border-t border-zinc-800 px-6 py-16">
         <div className="mx-auto max-w-2xl rounded-2xl border border-orange-800/40 bg-gradient-to-br from-orange-950/60 to-zinc-900 px-8 py-10 text-center">
           <h2 className="text-xl font-bold sm:text-2xl">
-            지금 바로 내 생체 IP를 등록하세요
+            지금 바로 내 연기를 Bio-IP로 등록하세요
           </h2>
           <p className="mt-2 text-sm text-zinc-400">
             촬영부터 등록·증명서 발급까지, 내가 직접 관리합니다.
@@ -343,7 +343,7 @@ export default function LandingPage() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-zinc-800 px-6 py-6 text-center text-xs text-zinc-600">
-        © 2026 HANiPLAY — PLAY your Bio-IP
+        © 2026 HANiplay — PLAY your Bio-IP
       </footer>
     </div>
   );

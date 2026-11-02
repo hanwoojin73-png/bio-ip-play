@@ -122,7 +122,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HANiPLAY 라이선스 인증서</title>
+  <title>HANiplay 라이선스 등록증</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -240,15 +240,15 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
 <body>
   <div class="cert">
     <div class="header">
-      <p class="platform">HANiPLAY</p>
-      <p class="title-ko">라이선스 인증서</p>
-      <p class="title-en">Bio-IP License Certificate</p>
-      <div class="seal">HANi<br/>PLAY</div>
+      <p class="platform">HANiplay</p>
+      <p class="title-ko">라이선스 등록증</p>
+      <p class="title-en">Bio-IP License Registration</p>
+      <div class="seal">HANi<br/>play</div>
     </div>
 
     <div class="body">
       <p class="intro">
-        본 인증서는 HANiPLAY 플랫폼에 등록된 생체 IP 자산의<br/>
+        본 등록증은 HANiplay 플랫폼에 등록된 Bio-IP 자산의<br/>
         등록 사실을 증명합니다.
       </p>
 
@@ -278,7 +278,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
         </tr>
         <tr>
           <td class="label">발급 플랫폼</td>
-          <td class="value">HANiPLAY (bio-ip-play.vercel.app)</td>
+          <td class="value">HANiplay (bio-ip-play.vercel.app)</td>
         </tr>
       </table>
     </div>
@@ -286,7 +286,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
     <div class="footer">
       <div class="footer-left">
         bio-ip-play.vercel.app<br/>
-        © HANiPLAY. All rights reserved.
+        © HANiplay. All rights reserved.
       </div>
       <div class="footer-right">
         <p class="issued-label">발급일</p>
@@ -505,7 +505,7 @@ function AssetCard({ asset, onDelete, onUpdate }: AssetCardProps) {
       {/* Share */}
       <div className="border-t border-zinc-800 pt-3">
         <ShareButton
-          text={`내 Bio-IP "${asset.owner_name ?? asset.title}"를 등록했어요! #BioIP #HANiPLAY`}
+          text={`내 Bio-IP "${asset.owner_name ?? asset.title}"를 등록했어요! #BioIP #HANiplay`}
         />
       </div>
     </article>
@@ -550,7 +550,7 @@ function EmptyState({ hasFilter }: { hasFilter: boolean }) {
       <div className="space-y-2">
         <h3 className="text-lg font-semibold text-white">아직 등록된 Bio-IP가 없어요</h3>
         <p className="text-sm text-zinc-400">
-          챌린지를 참여하고 나만의 생체 IP를 등록해보세요
+          챌린지를 참여하고 나만의 Bio-IP를 등록해보세요
         </p>
       </div>
       <Link
@@ -621,7 +621,7 @@ export default function MyBioIPPage() {
         <div className="mx-auto max-w-5xl">
           <h1 className="text-2xl font-bold tracking-tight">나의 Bio-IP 보관함</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            등록된 생체 IP 자산을 관리하고 라이선스 현황을 확인하세요
+            등록된 Bio-IP 자산을 관리하고 라이선스 현황을 확인하세요
           </p>
 
           {/* Stats row */}

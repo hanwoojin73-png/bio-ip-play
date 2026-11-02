@@ -102,7 +102,7 @@ const ASSETS: MarketplaceAsset[] = [
     allowedUseCases: ["fashion", "advertising", "editorial"],
     prohibitedUseCases: ["political", "adult_content"],
     registeredAt: "2026-04-18T13:00:00Z",
-    description: "서울 스트리트 패션 스타일 지문 포함 시각 레이어. 패션·광고·에디토리얼 라이선스에 특화.",
+    description: "서울 스트리트 패션 스타일 시그니처 포함 시각 레이어. 패션·광고·에디토리얼 라이선스에 특화.",
     waveform: [0.6,0.4,0.8,0.5,0.7,0.9,0.3,0.6,0.8,0.5,0.7,0.4,0.9,0.6,0.3,0.8,0.5,0.7,0.4,0.9,0.6,0.8,0.3,0.5,0.7,0.4,0.9,0.6,0.8,0.5],
   },
   {
@@ -601,7 +601,7 @@ function PurchaseFlowModal({
               </div>
               <div>
                 <p className="text-base font-bold text-white">라이선스 구매 완료!</p>
-                <p className="mt-1 text-sm text-zinc-400">Supabase 라이선스 DB에 저장됐습니다.</p>
+                <p className="mt-1 text-sm text-zinc-400">라이선스 DB에 저장됐습니다.</p>
               </div>
               {txHash && (
                 <a
