@@ -66,6 +66,16 @@ function PencilIcon() {
 
 // ─── License certificate ──────────────────────────────────────────────────────
 
+/** Escapes text for safe interpolation into the certificate's HTML string. */
+function escapeHtml(value: string | null | undefined): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /** Uploaded files carry no burned-in watermark, so no watermark_id is saved. */
 const UPLOADED_NO_WATERMARK_LABEL = "업로드 영상(워터마크 미적용)";
 
@@ -86,14 +96,14 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
     : "—";
 
   const performanceLabel = asset.performance_type
-    ? `${asset.performance_type}${asset.performance_genre ? ` (${asset.performance_genre})` : ""}`
+    ? `${escapeHtml(asset.performance_type)}${asset.performance_genre ? ` (${escapeHtml(asset.performance_genre)})` : ""}`
     : "—";
 
   const extraRows = [
     asset.owner_name ? `
         <tr>
           <td class="label">소유자</td>
-          <td class="value">${asset.owner_name}</td>
+          <td class="value">${escapeHtml(asset.owner_name)}</td>
         </tr>` : "",
     asset.performance_type ? `
         <tr>
@@ -103,7 +113,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
     asset.content_type === "character" && asset.character_name ? `
         <tr>
           <td class="label">캐릭터명</td>
-          <td class="value">${asset.character_name}</td>
+          <td class="value">${escapeHtml(asset.character_name)}</td>
         </tr>` : "",
   ].join("");
 
@@ -245,13 +255,13 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
       <table class="fields">
         <tr>
           <td class="label">자산명</td>
-          <td class="value">${asset.title ?? "—"}</td>
+          <td class="value">${asset.title ? escapeHtml(asset.title) : "—"}</td>
         </tr>
         ${extraRows}
         <tr>
           <td class="label">워터마크 ID</td>
           ${asset.watermark_id
-            ? `<td class="value mono">${asset.watermark_id}</td>`
+            ? `<td class="value mono">${escapeHtml(asset.watermark_id)}</td>`
             : `<td class="value">${UPLOADED_NO_WATERMARK_LABEL}</td>`}
         </tr>
         <tr>
