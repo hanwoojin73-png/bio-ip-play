@@ -71,7 +71,7 @@ const FEATURES: Feature[] = [
     iconKey:     "bio",
     title:       "연기 데이터 추출",
     badge:       "3-Layer",
-    description: "시각(얼굴 기하·표정), 음성(피치·음색·리듬), 다이내믹스(제스처·모션 템포)를 동시에 캡처해 고유한 바이오 시그니처를 생성합니다.",
+    description: "시각(얼굴 기하·표정), 음성(피치·음색·리듬), 다이내믹스(제스처·모션 템포)를 동시에 캡처합니다. 시그니처 추출은 다음 단계에서 더해집니다.",
     accent:      "from-orange-500 to-orange-600",
     badgeClass:  "bg-orange-900/60 text-orange-300",
     borderHover: "hover:border-orange-700/60",
@@ -100,7 +100,7 @@ const FEATURES: Feature[] = [
 
 const TECH_POINTS: TechPoint[] = [
   { title: "4가지 요소",   desc: "초상 · 표정 · 몸짓 · 음성" },
-  { title: "호흡 분석",     desc: "4요소 사이의 고유한 리듬과 타이밍을 데이터화" },
+  { title: "호흡 분석",     desc: "4요소 사이의 리듬과 타이밍까지 담도록 설계" },
   { title: "나만의 시그니처", desc: "내 연기의 고유한 결을 Bio-IP로" },
 ];
 
