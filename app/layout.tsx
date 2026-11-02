@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import NavBar from "@/components/NavBar";
-import Web3Provider from "@/components/Web3Provider";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -14,9 +13,9 @@ const geistMono = localFont({
   variable: "--font-geist-mono",
   weight: "100 900",
 });
+
 const SITE_TITLE       = "HANiPLAY";
 const SITE_DESCRIPTION = "AI보다 내가 먼저. 나의 초상·표정·몸짓·음성을 Bio-IP로.";
-
 
 export const metadata: Metadata = {
   // Absolute base for OG/Twitter URLs. Kept on the existing deployment domain.
@@ -48,10 +47,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Web3Provider>
-          <NavBar />
-          {children}
-        </Web3Provider>
+        <NavBar />
+        {children}
       </body>
     </html>
   );

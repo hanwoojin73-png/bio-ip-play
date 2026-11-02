@@ -8,8 +8,8 @@ const NAV_LINKS = [
   { href: "/",            label: "홈" },
   { href: "/challenge",   label: "챌린지" },
   { href: "/my-bio-ip",   label: "My Bio-IP" },
-  { href: "/marketplace", label: "마켓플레이스" },
-  { href: "/dashboard",   label: "대시보드" },
+  // 마켓플레이스(/marketplace)·대시보드(/dashboard)는 MVP 범위 밖이라 메뉴에서 숨김.
+  // 페이지 자체는 남아 있고, 직접 접근 시 "개발 중인 기능입니다" 배너가 표시된다.
 ] as const;
 
 function HamburgerIcon({ open }: { open: boolean }) {
