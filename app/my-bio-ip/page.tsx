@@ -122,7 +122,7 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HANiplay 라이선스 등록증</title>
+  <title>HANiplay 라이선스 확인서</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -241,14 +241,14 @@ function openLicenseCertificate(asset: BioIPAssetRecord) {
   <div class="cert">
     <div class="header">
       <p class="platform">HANiplay</p>
-      <p class="title-ko">라이선스 등록증</p>
+      <p class="title-ko">라이선스 확인서</p>
       <p class="title-en">Bio-IP License Registration</p>
       <div class="seal">HANi<br/>play</div>
     </div>
 
     <div class="body">
       <p class="intro">
-        본 등록증은 HANiplay 플랫폼에 등록된 Bio-IP 자산의<br/>
+        본 확인서는 HANiplay 플랫폼에 등록된 Bio-IP 자산의<br/>
         등록 사실을 증명합니다.
       </p>
 
